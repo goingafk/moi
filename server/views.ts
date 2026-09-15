@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 
+import { viewTabId } from '@/lib/workspace-tabs'
 import type { ViewConfig, ViewInfo } from '@/lib/types'
 
 import { syncAppletLogAfterBuild } from './applet-log'
@@ -11,17 +12,31 @@ import {
   scanSources,
   serveApplet
 } from './applets'
+import { serializeWorkspaceBundle } from './bundle-queue'
 import { reloadModules } from './functions'
-import { markViewBuilderReady } from './view-builders'
+import { loadLayout, saveLayout } from './layout'
+import { deleteViewBuilderForView, markViewBuilderReady } from './view-builders'
+import { setViewSourceTitle } from './applets/config'
+import { deleteViewSourceFiles, readViewSource, ViewSourceInUseError } from './applets/view-source'
 
 // The view applet kind. Sources in `.moi/views/`, compiled output + manifest in
-// `.moi/.build/views/`; the shared mechanics live in `applets.ts`. Manifest
+// `.moi/.build/views/`; the shared mechanics live in `applets/index.ts`. Manifest
 // shape: `{ config: { <name>: ViewConfig }, order: [<name>, …] }`. `order` is the nav
 // tab order — first-seen (creation) order, persisted so it's stable across
 // rebuilds (the filesystem can't recover creation order).
 type ViewManifest = {
   config: Record<string, ViewConfig>
   order: string[]
+}
+
+export class ViewMutationError extends Error {
+  constructor(
+    message: string,
+    public status: 404 | 409 | 422
+  ) {
+    super(message)
+    this.name = 'ViewMutationError'
+  }
 }
 
 async function readManifest(workspacePath: string): Promise<ViewManifest> {
@@ -220,6 +235,104 @@ export async function handleBundleViews(
   }
 
   return results
+}
+
+export async function updateViewTitle(
+  publish: (msg: unknown) => void,
+  workspaceId: string,
+  workspacePath: string,
+  viewId: string,
+  title: string
+): Promise<ViewInfo> {
+  return serializeWorkspaceBundle(workspacePath, async () => {
+    const current = (await getViewList(workspacePath)).find(view => view.id === viewId)
+    if (!current) throw new ViewMutationError('View not found', 404)
+    if (current.config.title === title) return current
+
+    const source = await readViewSource(workspacePath, viewId)
+    if (!source) throw new ViewMutationError('View source not found', 409)
+
+    let updated: string
+    try {
+      updated = setViewSourceTitle(source.source, title)
+    } catch (error) {
+      throw new ViewMutationError(
+        error instanceof Error ? error.message : 'Could not update the view title',
+        409
+      )
+    }
+    if (updated === source.source) return current
+
+    await Bun.write(source.path, updated)
+    try {
+      // A rename changed this entry; rebuild only it and preserve builder status.
+      const results = await handleBundleViews(
+        publish,
+        workspaceId,
+        workspacePath,
+        true,
+        true,
+        viewId
+      )
+      const result = results.find(candidate => candidate.name === viewId)
+      if (result?.status !== 'built') {
+        throw new ViewMutationError(result?.error ?? 'Could not rebuild the renamed view', 422)
+      }
+
+      const renamed = (await getViewList(workspacePath)).find(view => view.id === viewId)
+      if (!renamed) {
+        throw new ViewMutationError('Renamed view was not found after rebuilding', 422)
+      }
+      return renamed
+    } catch (error) {
+      // An agent may have edited or removed the source while the build ran.
+      if (
+        (await Bun.file(source.path)
+          .text()
+          .catch(() => null)) === updated
+      ) {
+        await Bun.write(source.path, source.source)
+      }
+      throw error
+    }
+  })
+}
+
+export async function deleteView(
+  publish: (msg: unknown) => void,
+  workspaceId: string,
+  workspacePath: string,
+  viewId: string
+): Promise<void> {
+  await serializeWorkspaceBundle(workspacePath, async () => {
+    const current = (await getViewList(workspacePath)).some(view => view.id === viewId)
+    if (!current) throw new ViewMutationError('View not found', 404)
+
+    try {
+      await deleteViewSourceFiles(workspacePath, viewId)
+    } catch (error) {
+      if (error instanceof ViewSourceInUseError) throw new ViewMutationError(error.message, 409)
+      throw error
+    }
+    reloadModules([`views/${viewId}`], workspacePath)
+    await deleteViewBuilderForView(workspaceId, workspacePath, viewId)
+    const layout = await loadLayout(workspacePath)
+    const tab = viewTabId(viewId)
+    await saveLayout(
+      {
+        ...layout,
+        tabs: {
+          open: layout.tabs.open.filter(candidate => candidate !== tab),
+          active: layout.tabs.active === tab ? 'overview' : layout.tabs.active
+        }
+      },
+      workspacePath
+    )
+
+    publish({ type: 'view:deleted', workspaceId, name: viewId })
+    publish({ type: 'workspace:updated' })
+    await handleBundleViews(publish, workspaceId, workspacePath, false, false, viewId)
+  })
 }
 
 export function serveView(
