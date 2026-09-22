@@ -6,6 +6,15 @@ import type { WorkspaceTheme } from './themes'
 // A custom UI unit embedded in a workspace.
 export type AppletKind = 'view' | 'widget'
 
+// What a bundled applet's `moi` module may call on its host-attached bridge.
+// Inputs stay unknown at this trust boundary; the browser host narrows them.
+export type AppletBridge = {
+  addChatAttachment: (input: unknown) => void
+  navigate: (href: unknown) => void
+  resolveHref: (href: unknown) => string
+  sendChatMessage: (input: unknown, context?: unknown) => void
+}
+
 export type AppletInfo = {
   id: string
   // Content revision of the built bundle (`<size>-<mtime>` of index.js).
@@ -71,7 +80,7 @@ export type ViewBuilder = {
 // server-side (bundle pipeline, RPC route); `load`/`render`/`window`/`runtime`
 // are browser-side and reach the journal via POST
 // /api/workspaces/:id/applet-log. `runtime` is the applet API refusing a
-// request rather than code throwing — a `focusTab` at a tab that no longer
+// request rather than code throwing — a `navigate` to a view that no longer
 // exists, a `sendChatMessage` dropped by the rate limit — which the applet's
 // own code never sees.
 export type AppletLogSource = 'build' | 'load' | 'render' | 'window' | 'rpc' | 'runtime'
@@ -578,8 +587,8 @@ export type WorkspaceTabId =
   | 'agent'
   | 'overview'
   | 'scratchpad'
-  | `view:${string}`
-  | `view-builder:${string}`
+  | `views/${string}`
+  | `view-builders/${string}`
 
 // Open tabs plus the workspace's saved DEFAULT tab. `active` is not live focus
 // state — the live active tab is each browser tab's URL (`/workspace/:id/<tab>`).
