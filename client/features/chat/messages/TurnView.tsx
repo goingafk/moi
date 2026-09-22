@@ -1,3 +1,4 @@
+import { TextAttachmentChip } from '../composer/attachments/TextAttachmentChip'
 import { memo } from 'react'
 
 import { IconChevronRight, IconFile } from '@tabler/icons-react'
@@ -9,9 +10,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '@/client/components/ui/collapsible'
-import { MarkdownContent } from '@/client/features/chat/MarkdownContent'
-import { ToolCallGroup } from '@/client/features/chat/tool-group/ToolCallGroup'
-import { formatDuration } from '@/client/features/chat/tool-group/format'
+import { MarkdownContent } from '@/client/features/chat/messages/MarkdownContent'
+import { ToolCallGroup } from '@/client/features/chat/messages/tool-group/ToolCallGroup'
+import { formatDuration } from '@/client/features/chat/messages/tool-group/format'
 import { useWorkspaceLayoutCtx } from '@/client/features/workspace/WorkspaceLayoutContext'
 import { cn } from '@/client/lib/cn'
 
@@ -165,17 +166,21 @@ export const TurnView = memo(function TurnView({ turn, processing = false }: Tur
     // Plain user input — right-aligned. Attachments (images/files) stack above
     // the text bubble.
     const fileParts = turn.parts.filter(
-      (p): p is Extract<Part, { type: 'file' }> => p.type === 'file'
+      (p): p is Extract<Part, { type: 'file-attachment' }> => p.type === 'file-attachment'
     )
+    const textAttachmentParts = turn.parts.filter(p => p.type === 'text-attachment')
     const text = turn.parts
       .filter(p => p.type === 'text')
       .map(p => (p.type === 'text' ? p.text : ''))
       .join('\n')
-    if (!text && fileParts.length === 0) return null
+    if (!text && fileParts.length === 0 && textAttachmentParts.length === 0) return null
     return (
       <div className="flex w-full min-w-0 flex-col items-end gap-1.5 pl-8">
+        {textAttachmentParts.map((p, i) => (
+          <TextAttachmentChip key={`text-attachment:${i}`} label={p.label} />
+        ))}
         {fileParts.map((p, i) => (
-          <FilePart key={i} mediaType={p.mediaType} url={p.url} filename={p.filename} />
+          <FilePart key={i} mediaType={p.mediaType} previewUrl={p.previewUrl} label={p.label} />
         ))}
         {text && (
           <p
@@ -207,14 +212,16 @@ type PartRendererProps = { part: Part }
 // folded into a <ToolCallGroup> run by buildSegments.
 function PartRenderer({ part }: PartRendererProps) {
   switch (part.type) {
+    case 'text-attachment':
+      return <TextAttachmentChip label={part.label} />
     case 'text':
       return <MarkdownContent content={part.text} />
     case 'tool-call':
       // Tool calls normally fold into a run; this is a defensive fallback for a
       // lone tool-call segment, rendered as a one-row group.
       return <ToolCallGroup parts={[part]} cwd={null} />
-    case 'file':
-      return <FilePart mediaType={part.mediaType} url={part.url} filename={part.filename} />
+    case 'file-attachment':
+      return <FilePart mediaType={part.mediaType} previewUrl={part.previewUrl} label={part.label} />
     case 'source-url':
       return <SourceLink url={part.url} title={part.title} />
     case 'source-document':
@@ -226,16 +233,16 @@ function PartRenderer({ part }: PartRendererProps) {
   }
 }
 
-type FilePartProps = { mediaType: string; url: string; filename?: string }
-function FilePart({ mediaType, url, filename }: FilePartProps) {
+type FilePartProps = { mediaType: string; previewUrl?: string; label?: string }
+function FilePart({ mediaType, previewUrl, label }: FilePartProps) {
   // Images (data/object/remote URLs) render as a thumbnail; everything else is a
-  // labelled chip. A file with no usable url (e.g. a non-image attachment whose
+  // labelled chip. A file with no preview URL (e.g. a non-image attachment whose
   // bytes live only server-side) still shows its name.
-  if (mediaType.startsWith('image/') && url) {
+  if (mediaType.startsWith('image/') && previewUrl) {
     return (
       <img
-        src={url}
-        alt={filename ?? 'attachment'}
+        src={previewUrl}
+        alt={label ?? 'attachment'}
         className="max-h-64 max-w-full rounded-lg border border-border object-contain"
       />
     )
@@ -243,7 +250,7 @@ function FilePart({ mediaType, url, filename }: FilePartProps) {
   return (
     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-2.5 py-1.5 text-xs text-accent-foreground">
       <IconFile size={16} stroke={1.75} />
-      <span className="truncate">{filename ?? mediaType}</span>
+      <span className="truncate">{label ?? mediaType}</span>
     </div>
   )
 }
