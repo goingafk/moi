@@ -712,7 +712,8 @@ export type Model = {
   resolvedModel?: string
   // Human-readable label (Claude `displayName`; OpenClaw `name`).
   displayName: string
-  // " · "-joined blurb (Claude): "<headline> · <tagline> · …". Absent for OpenClaw.
+  // One-line blurb (Claude: "Most efficient for everyday tasks"). Not shown by
+  // the picker. Absent for OpenClaw.
   description?: string
   // Heading this model sits under in the picker (Hermes: the upstream provider,
   // e.g. 'Ollama'). Absent when the backend serves one flat catalog.
