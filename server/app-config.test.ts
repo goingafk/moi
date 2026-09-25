@@ -23,6 +23,8 @@ test('defaults apply when no config file exists', () => {
     selfUpdate: false,
     auth: null,
     allowedUsers: [],
+    tailnetIp: null,
+    allowedIps: [],
     publicUrl: null
   })
 })
@@ -66,6 +68,27 @@ test('auth and allowed users come from the config file, env wins', async () => {
       MOI_ALLOWED_USERS: 'b@example.com, c@example.com'
     })
   ).toMatchObject({ auth: 'tailscale', allowedUsers: ['b@example.com', 'c@example.com'] })
+})
+
+test('direct-tailnet IPs are validated and environment overrides the file', async () => {
+  const file = await configFile(
+    JSON.stringify({
+      auth: 'tailnet-ip',
+      tailnetIp: '100.73.80.77',
+      allowedIps: ['100.76.135.60']
+    })
+  )
+  expect(loadAppConfig(file, NO_ENV)).toMatchObject({
+    auth: 'tailnet-ip',
+    tailnetIp: '100.73.80.77',
+    allowedIps: ['100.76.135.60']
+  })
+  expect(
+    loadAppConfig(file, {
+      MOI_TAILNET_IP: '100.64.0.2',
+      MOI_ALLOWED_IPS: '100.64.0.3,192.168.1.5'
+    })
+  ).toMatchObject({ tailnetIp: '100.64.0.2', allowedIps: ['100.64.0.3'] })
 })
 
 test('an unknown auth value is ignored rather than turning auth off', async () => {

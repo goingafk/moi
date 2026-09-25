@@ -53,7 +53,7 @@ Treat these as facts about the starting point. If you find any of them wrong, sa
 5. **Two model modes, user-selectable:** _Auto routed_ (always passes through Jev or Laya) and _Pick your model_ (manual). Global default in settings plus a per-session toggle in the composer.
 6. **Pick your model shows everything:** all Claude Code models, all Codex models, and every model installed on each configured Ollama server, in one grouped picker.
 7. **Memory is cross-agent and lives in its own service** (separate repo), exposed over MCP so any agent (Claude Code, Codex, Cline) can use it, with moi as one client. Global config: on/off toggle, scorer choice Jev or Laya, eviction threshold.
-8. **Remote-first over Tailscale.** moi stays bound to localhost on the server; Tailscale Serve publishes it to my tailnet only. Never bind `0.0.0.0` or expose to the public internet.
+8. **Remote-first over Tailscale.** The initial Serve mode keeps moi bound to localhost and publishes it over HTTPS. The owner also approved a simpler direct-IP mode for the first container deployment: bind only its own Tailscale IPv4 address and allow-list the MacBook's Tailscale device IP. Never bind `0.0.0.0` or expose to the public internet. Direct-IP mode has no moi password and loses browser secure-context features; Serve remains available for user-identity auth and HTTPS.
 9. **Mobile is for supervising**, not heavy editing: start tasks, get notified, approve/redirect, review diffs.
 10. **Keep upstream conventions** (AGENTS.md rules, harness layering, tests next to code, Bun-native APIs, product language rules).
 
@@ -63,10 +63,10 @@ Treat these as facts about the starting point. If you find any of them wrong, sa
 
 ```
 Phone / laptop browser (PWA)
-        │  HTTPS, tailnet only (Tailscale Serve)
+        │  HTTPS via Serve, or HTTP to a Tailscale IP (tailnet only)
         ▼
-moi server (Bun) on my server, bound to 127.0.0.1
-  ├─ Auth middleware (Tailscale identity) ── rejects anyone not me
+moi server (Bun), bound to 127.0.0.1 or its exact Tailscale IP
+  ├─ Auth middleware (Serve user or direct device allow-list)
   ├─ Sessions (agent chosen per session, not per workspace)
   │    ├─ Claude Code harness ── Claude subscription
   │    ├─ Codex harness ──────── ChatGPT subscription
@@ -102,7 +102,7 @@ Done when: baseline recorded, dev server runs, no upstream auto-update path, AGE
 
 ### Phase 1 — Security for remote access
 
-Goal: safe to use from any of my devices over Tailscale; unusable by anyone else.
+Goal: safe to use from approved devices over Tailscale; unusable by anyone else.
 
 Tasks:
 
@@ -113,7 +113,9 @@ Tasks:
 5. Write `docs/fork/remote-setup.md`: running moi as a service on the server, `tailscale serve` setup (HTTPS, MagicDNS name), and how to add allowed users.
 6. Tests: unauthenticated HTTP request → 401; unauthenticated WS upgrade → rejected; allowed identity → OK; disallowed identity → 403; bypass only on loopback.
 
-Done when: from my phone on the tailnet I can open moi over HTTPS; from a device not on the tailnet, nothing is reachable; tests pass.
+Owner-approved post-phase adjustment: add direct Tailscale-IP access for the MacBook without Serve. Bind only the container's Tailscale IPv4 address and allow-list client device IPs; keep Serve mode intact and protect HTTP and WebSockets equally.
+
+Done when: an approved device can open moi over Tailscale; other devices cannot use it; tests pass. Serve mode retains the original phone-over-HTTPS verification target, while the first direct-IP deployment is MacBook-only.
 
 ### Phase 2 — Multi-agent sessions and the unified model picker (manual mode)
 
@@ -294,7 +296,7 @@ Done when: moi is installed on my phone's home screen, buzzes when an agent need
 3. **Respect the harness layering.** Wire types stay inside adapters; shared contracts stay in `lib/`. No harness folder imports from a sibling harness.
 4. **Tests next to code** (`*.test.ts`), using the existing seams (e.g. `setAppSettingsDir`, `MOI_DATA_DIR`) rather than touching my real data dir.
 5. **Secrets never in the repo or in logs.** Use the keychain-backed stores. Never print API keys.
-6. **Never bind to a public interface** or add a way to reach moi without auth once Phase 1 lands.
+6. **Never bind to a public interface** or add a way to reach moi without auth once Phase 1 lands. Direct-tailnet device-IP allow-listing is the owner-approved exception to the original loopback-only Serve design, not a general no-auth bypass.
 7. **Small, reviewable commits**, one branch per phase, following `.agents/rules/pull-requests.md` if opening PRs on my fork.
 8. **Stop and ask** before: deleting upstream features, changing the license, destructive migrations of existing data files, adding heavy new dependencies, or anything that changes security posture.
 9. **End every phase with a summary:** what changed, how it was verified (commands + results), open questions, and anything in this plan that turned out to be wrong.

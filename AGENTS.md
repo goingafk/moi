@@ -13,7 +13,7 @@ This is a personal fork of `molefrog/moi`, worked on phase by phase. Read `docs/
 Every phase must end by updating `docs/fork/PROGRESS.md` with its summary, verification, decisions, and open items.
 
 - Agents are Claude Code, Codex, and local models on Ollama (via Claude Code pointed at Ollama); Jev (TypeSafe API, called directly) or Laya routes in Auto mode. No Hermes or OpenRouter work.
-- Remote access is Tailscale-only with moi bound to loopback; never bind a public interface. Every HTTP route and WebSocket goes through `server/auth.ts` (Tailscale identity allow-list, or `auth: off` for direct local requests; `bun run dev` defaults to off). Setup: `docs/fork/remote-setup.md`.
+- Remote access is Tailscale-only; never bind a public interface. Every HTTP route and WebSocket goes through `server/auth.ts`: Serve identity allow-list on loopback, direct Tailscale-IP device allow-list bound only to that IP, or `auth: off` for direct local requests (`bun run dev` defaults to off). Setup: `docs/fork/remote-setup.md`.
 - npm self-update is off by default (`selfUpdate` in `config.json` / `MOI_SELF_UPDATE`) — the published `moi-computer` package is upstream and would replace the fork.
 
 ## Agent context layout

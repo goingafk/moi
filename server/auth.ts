@@ -7,6 +7,8 @@
 //   requests carrying an allowed login pass. Verified against
 //   tailscale/ipn/ipnlocal/serve.go (`addTailscaleIdentityHeaders`) and
 //   https://tailscale.com/kb/1312/serve — see docs/fork/remote-setup.md.
+// - 'tailnet-ip': direct HTTP to a specific Tailscale device IP. Only listed
+//   Tailscale peer IPs pass; no Serve headers or local bypass are accepted.
 // - 'off': local use only. Direct loopback requests with a loopback Host and
 //   no proxy headers pass; anything that came through a proxy is refused.
 //
@@ -17,6 +19,7 @@
 // request — including a request a malicious page made on their behalf.
 import type { AppConfig, AuthSetting } from './app-config'
 import { getAppConfig } from './app-config'
+import { isTailnetIpv4 } from './tailnet-ip'
 
 export type AuthMode = AuthSetting
 
@@ -24,6 +27,8 @@ export type AuthPolicy = {
   mode: AuthMode
   // Lowercased.
   allowedUsers: ReadonlySet<string>
+  tailnetIp: string | null
+  allowedIps: ReadonlySet<string>
 }
 
 export type AuthDecision =
@@ -31,12 +36,14 @@ export type AuthDecision =
   | { ok: false; status: 401 | 403; reason: string }
 
 export function resolveAuthPolicy(
-  config: Pick<AppConfig, 'auth' | 'allowedUsers'>,
+  config: Pick<AppConfig, 'auth' | 'allowedUsers' | 'tailnetIp' | 'allowedIps'>,
   dev: boolean
 ): AuthPolicy {
   return {
     mode: config.auth ?? (dev ? 'off' : 'tailscale'),
-    allowedUsers: new Set(config.allowedUsers.map(user => user.trim().toLowerCase()))
+    allowedUsers: new Set(config.allowedUsers.map(user => user.trim().toLowerCase())),
+    tailnetIp: config.tailnetIp,
+    allowedIps: new Set(config.allowedIps)
   }
 }
 
@@ -93,7 +100,15 @@ function hostWithoutPort(hostHeader: string): string {
 
 // Headers a reverse proxy adds. Their presence on a loopback request means the
 // request did not come from this machine directly.
-const PROXY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip']
+const PROXY_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-forwarded-port',
+  'x-forwarded-prefix',
+  'x-real-ip'
+]
 
 function hasProxyHeaders(headers: Headers): boolean {
   if (PROXY_HEADERS.some(name => headers.has(name))) return true
@@ -162,6 +177,36 @@ export function authorizeRequest(
   peerAddress: string | null | undefined,
   policy: AuthPolicy
 ): AuthDecision {
+  if (policy.mode === 'tailnet-ip') {
+    // Bind to the configured Tailscale interface address, not a LAN/wildcard
+    // address. The peer address is reported by Bun from the TCP connection.
+    if (!policy.tailnetIp || !peerAddress || !isTailnetIpv4(peerAddress)) {
+      return { ok: false, status: 401, reason: 'moi only accepts direct Tailscale connections.' }
+    }
+    if (!policy.allowedIps.has(peerAddress)) {
+      return { ok: false, status: 403, reason: 'This Tailscale device is not allowed to use moi.' }
+    }
+    if (hasProxyHeaders(req.headers)) {
+      return { ok: false, status: 401, reason: 'Open moi directly at its Tailscale IP.' }
+    }
+    const host = req.headers.get('host') ?? ''
+    if (hostWithoutPort(host) !== policy.tailnetIp) {
+      return { ok: false, status: 403, reason: 'Open moi at its configured Tailscale IP.' }
+    }
+    let expectedOrigin: string
+    try {
+      const url = new URL(`http://${host}`)
+      if (url.hostname !== policy.tailnetIp || url.host !== host) throw new Error('invalid Host')
+      expectedOrigin = url.origin
+    } catch {
+      return { ok: false, status: 403, reason: 'Open moi at its configured Tailscale IP.' }
+    }
+    if (crossSiteViolation(req, expectedOrigin)) {
+      return { ok: false, status: 403, reason: CROSS_SITE_REASON }
+    }
+    return { ok: true, user: null }
+  }
+
   if (!isLoopbackAddress(peerAddress)) {
     return {
       ok: false,
@@ -265,10 +310,30 @@ export function withAuth<S extends RequestIpSource, R extends Response | Promise
 
 export type BindCheck = { ok: true; warning?: string } | { ok: false; error: string }
 
-// Both modes depend on loopback as their trust boundary. Tailscale identity
-// headers are not cryptographically signed, so listening more widely would
-// make them forgeable by any peer that could reach the port directly.
+// Serve and off modes depend on loopback as their trust boundary. Serve's
+// identity headers are not signed, so a wider bind would make them forgeable.
+// Direct-tailnet mode binds only its configured Tailscale IPv4 address.
 export function checkBindHost(host: string, policy: AuthPolicy): BindCheck {
+  if (policy.mode === 'tailnet-ip') {
+    if (!policy.tailnetIp || !isTailnetIpv4(policy.tailnetIp)) {
+      return {
+        ok: false,
+        error: 'Set tailnetIp (or MOI_TAILNET_IP) to this machine’s Tailscale IPv4 address.'
+      }
+    }
+    if (policy.allowedIps.size === 0) {
+      return {
+        ok: false,
+        error: 'Set allowedIps (or MOI_ALLOWED_IPS) to at least one Tailscale client IPv4 address.'
+      }
+    }
+    return host === policy.tailnetIp
+      ? { ok: true }
+      : {
+          ok: false,
+          error: `Refusing to listen on ${host} with auth tailnet-ip. Bind only ${policy.tailnetIp}.`
+        }
+  }
   if (isLoopbackHostname(stripBrackets(host))) return { ok: true }
   return {
     ok: false,
@@ -278,6 +343,9 @@ export function checkBindHost(host: string, policy: AuthPolicy): BindCheck {
 
 export function describeAuth(policy: AuthPolicy): string {
   if (policy.mode === 'off') return 'auth off — direct local requests only'
+  if (policy.mode === 'tailnet-ip') {
+    return `auth: direct Tailscale IP — ${policy.allowedIps.size} allowed device${policy.allowedIps.size === 1 ? '' : 's'}`
+  }
   const count = policy.allowedUsers.size
   return count === 0
     ? 'auth: Tailscale — no allowed users yet, every request will be refused (set MOI_ALLOWED_USERS)'

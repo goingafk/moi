@@ -4,6 +4,7 @@ import { join } from 'path'
 import type { ClientAppConfig } from '@/lib/types'
 
 import { DATA_DIR } from './data-dir'
+import { isTailnetIpv4 } from './tailnet-ip'
 
 // Startup (deployment) config, read once per process from `config.json` in
 // moi's data dir and overridable by `MOI_*` env vars (env wins). Distinct from
@@ -27,18 +28,23 @@ export type AppConfig = {
   // installing it would replace the fork.
   selfUpdate: boolean
   // HTTP/WebSocket auth (`server/auth.ts`). 'tailscale' trusts Tailscale Serve
-  // identity headers on loopback requests; 'off' accepts only direct loopback
-  // requests. null (unset) resolves to 'off' under the dev supervisor and
+  // identity headers on loopback requests; 'tailnet-ip' accepts only listed
+  // Tailscale device IPs at the configured Tailscale bind IP; 'off' accepts
+  // only direct loopback requests. null resolves to 'off' under dev and
   // 'tailscale' everywhere else.
   auth: AuthSetting | null
   // Tailscale logins allowed in 'tailscale' mode (case-insensitive).
   allowedUsers: string[]
+  // Direct-tailnet mode: server IP and client IP allow-list. These are device
+  // identities, not user identities; an empty list denies every request.
+  tailnetIp: string | null
+  allowedIps: string[]
   // Browser-visible HTTPS origin published by Tailscale Serve. Used only for
   // CLI links; server-to-server commands keep using the control port.
   publicUrl: string | null
 }
 
-export type AuthSetting = 'tailscale' | 'off'
+export type AuthSetting = 'tailscale' | 'tailnet-ip' | 'off'
 
 const DEFAULTS: AppConfig = {
   cloudDemo: false,
@@ -47,6 +53,8 @@ const DEFAULTS: AppConfig = {
   selfUpdate: false,
   auth: null,
   allowedUsers: [],
+  tailnetIp: null,
+  allowedIps: [],
   publicUrl: null
 }
 
@@ -84,9 +92,26 @@ function parseString(raw: string | undefined): string | undefined {
 function parseAuth(raw: string | undefined): AuthSetting | undefined {
   if (raw === undefined || raw.trim() === '') return undefined
   const value = raw.trim().toLowerCase()
-  if (value === 'tailscale' || value === 'off') return value
-  warn(`ignoring MOI_AUTH=${raw} — expected "tailscale" or "off"`)
+  if (value === 'tailscale' || value === 'tailnet-ip' || value === 'off') return value
+  warn(`ignoring MOI_AUTH=${raw} — expected "tailscale", "tailnet-ip", or "off"`)
   return undefined
+}
+
+function parseTailnetIp(raw: string | undefined, label: string): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined
+  const ip = raw.trim()
+  if (isTailnetIpv4(ip)) return ip
+  warn(`ignoring ${label}=${raw} — expected a Tailscale IPv4 address in 100.64.0.0/10`)
+  return undefined
+}
+
+function parseAllowedIps(raw: string[] | undefined, label: string): string[] | undefined {
+  if (raw === undefined) return undefined
+  const valid = raw.map(ip => ip.trim()).filter(isTailnetIpv4)
+  if (valid.length !== raw.length) {
+    warn(`ignoring invalid entries in ${label} — expected Tailscale IPv4 addresses`)
+  }
+  return valid
 }
 
 function parsePublicUrl(raw: string | undefined, label: string): string | undefined {
@@ -160,12 +185,23 @@ function fileValues(file: string): Partial<AppConfig> {
     else warn('ignoring "selfUpdate" — expected a boolean')
   }
   if (raw.auth !== undefined) {
-    if (raw.auth === 'tailscale' || raw.auth === 'off') out.auth = raw.auth
-    else warn('ignoring "auth" — expected "tailscale" or "off"')
+    if (raw.auth === 'tailscale' || raw.auth === 'tailnet-ip' || raw.auth === 'off')
+      out.auth = raw.auth
+    else warn('ignoring "auth" — expected "tailscale", "tailnet-ip", or "off"')
   }
   if (raw.allowedUsers !== undefined) {
     if (isStringList(raw.allowedUsers)) out.allowedUsers = raw.allowedUsers
     else warn('ignoring "allowedUsers" — expected an array of strings')
+  }
+  if (raw.tailnetIp !== undefined) {
+    if (typeof raw.tailnetIp === 'string') {
+      out.tailnetIp = parseTailnetIp(raw.tailnetIp, '"tailnetIp"') ?? null
+    } else warn('ignoring "tailnetIp" — expected a Tailscale IPv4 address')
+  }
+  if (raw.allowedIps !== undefined) {
+    if (isStringList(raw.allowedIps)) {
+      out.allowedIps = parseAllowedIps(raw.allowedIps, '"allowedIps"') ?? []
+    } else warn('ignoring "allowedIps" — expected an array of Tailscale IPv4 addresses')
   }
   if (raw.publicUrl !== undefined) {
     if (typeof raw.publicUrl === 'string') {
@@ -188,6 +224,8 @@ export function loadAppConfig(
     selfUpdate: parseBool(env.MOI_SELF_UPDATE),
     auth: parseAuth(env.MOI_AUTH),
     allowedUsers: parseList(env.MOI_ALLOWED_USERS),
+    tailnetIp: parseTailnetIp(env.MOI_TAILNET_IP, 'MOI_TAILNET_IP'),
+    allowedIps: parseAllowedIps(parseList(env.MOI_ALLOWED_IPS), 'MOI_ALLOWED_IPS'),
     publicUrl: parsePublicUrl(env.MOI_PUBLIC_URL, 'MOI_PUBLIC_URL')
   }
   const merged = { ...DEFAULTS, ...fromFile }

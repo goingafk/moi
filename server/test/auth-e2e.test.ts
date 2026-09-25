@@ -199,3 +199,24 @@ test('Tailscale auth refuses to start on a non-loopback HOST', async () => {
   expect(code).not.toBe(0)
   expect(stderr).toContain('Refusing to listen on 0.0.0.0 with auth tailscale')
 }, 60_000)
+
+test('direct-tailnet auth refuses wildcard and mismatched binds', async () => {
+  for (const host of ['0.0.0.0', '127.0.0.1', '100.73.80.78']) {
+    const { proc } = spawnServer({
+      MOI_AUTH: 'tailnet-ip',
+      MOI_TAILNET_IP: '100.73.80.77',
+      MOI_ALLOWED_IPS: '100.76.135.60',
+      HOST: host
+    })
+    const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+    expect(code).not.toBe(0)
+    expect(stderr).toContain(`Refusing to listen on ${host} with auth tailnet-ip`)
+  }
+}, 60_000)
+
+test('direct-tailnet auth refuses to start without a client allow-list', async () => {
+  const { proc } = spawnServer({ MOI_AUTH: 'tailnet-ip', MOI_TAILNET_IP: '100.73.80.77' })
+  const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+  expect(code).not.toBe(0)
+  expect(stderr).toContain('Set allowedIps')
+}, 60_000)

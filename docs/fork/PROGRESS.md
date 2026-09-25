@@ -39,6 +39,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - Added `publicUrl` / `MOI_PUBLIC_URL` for CLI browser links in Tailscale mode. CLI commands continue to use the control port for operations and no longer open an unauthenticated localhost URL remotely.
 - Audited internal HTTP use: `thumbnails.ts` and `preview.ts` are response handlers, not HTTP clients; applet fetches and both browser sockets use relative same-origin URLs; operational CLI paths use the control port. Server-side browser testing must use the Serve origin or a separate auth-off dev port.
 - Added the Tailscale service and Serve setup guide in `remote-setup.md`.
+- Owner-approved follow-up: added direct-tailnet device-IP mode for the first container deployment. It binds only the configured Tailscale IPv4 address, allow-lists client device IPs, rejects proxy headers and cross-site requests, and leaves Serve mode unchanged. Updated the setup guide to lead with this mode.
 
 ### Verification
 
@@ -47,6 +48,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - `bun run lint`: exited 0 with the same 9 pre-existing React warnings.
 - `bun run format:check`: passed across 678 files.
 - Verified current Tailscale Serve behavior against its official documentation and current source: it strips incoming identity headers, sets the login and header-info marker for user-owned tailnet requests, preserves the incoming Host, and overwrites the forwarded host/protocol/source headers.
+- Direct-tailnet follow-up: `bun test` passed with 1,778 pass, 4 skip, 0 fail; typecheck and format passed; lint exited 0 with the same 9 existing warnings. Unit tests cover accepted/rejected peers, Host/Origin/proxy checks and bind validation; process tests cover startup refusal for unsafe binds and an empty allow-list. The actual container-to-MacBook connection remains owner-only verification.
 - Manual phone access over the real tailnet remains owner-only verification.
 
 ### Decisions
@@ -55,10 +57,12 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - Approved: Bun's development HTML shell and `/_bun/*` assets are served before application auth. They contain client source only; APIs, data-bearing vendor routes, `/status`, and both WebSockets remain gated. Prebuilt production installs gate the shell too.
 - Replaced the earlier warning behavior: Tailscale mode now refuses a non-loopback `HOST`, matching auth-off mode.
 - Trust current Tailscale Serve identity headers only on loopback and require its header marker plus forwarded HTTPS origin. A malicious local process remains in the trust boundary because it can also reach the control port and user files.
+- Direct-tailnet mode is an explicit exception to the initial loopback-only design. It authenticates a device IP, not a human login; initially only the owner's MacBook is allowed. It does not add a password or allow LAN/public binds.
 
 ### Open items
 
 - Verify the final deployment from a phone over Tailscale HTTPS; this requires the owner's server and tailnet.
+- Verify the direct-tailnet deployment from the allowed MacBook; only the owner can run this on the container. HTTP over Tailscale may not satisfy browser secure-context requirements; use Serve-based HTTPS if those features are needed.
 - Dev bundle source remains readable without auth by approved design; it exposes no workspace data.
 - A process already running as the moi OS user can forge the full Serve header set. This is not separately defended because the loopback-only control port intentionally gives that same local trust domain agent control and file access.
 - Cross-site top-level GET navigation remains allowed so links to moi work. The audited GET routes do not mutate state and the browser same-origin policy prevents the initiating site from reading their responses; cross-site WebSockets, preflights, fetches, and form posts are refused.

@@ -1,7 +1,7 @@
 Bun server on port 13337. Serves the client at `/`, upgrades `/ws` to WebSocket.
 
 - `web.ts` owns the Bun fullstack surface only: the SPA HTML shell (dev bundler + HMR / prebuilt `dist/`), the two WebSocket channels (`/ws` chat, `/api/workspaces/ws` live events), and graceful shutdown. Every HTTP API request is delegated to the Hono app via `fetch`.
-- `auth.ts` gates the whole HTTP port (Tailscale Serve identity allow-list, or `auth: off` for direct loopback requests only). `web.ts` wraps `fetch` and every function route with `withAuth`; any new route or WebSocket must be wrapped too. See `docs/fork/remote-setup.md`.
+- `auth.ts` gates the whole HTTP port (Tailscale Serve identity allow-list on loopback, direct Tailscale-IP device allow-list, or `auth: off` for direct loopback requests only). `web.ts` wraps `fetch` and every function route with `withAuth`; any new route or WebSocket must be wrapped too. See `docs/fork/remote-setup.md`.
 - `api.ts` is the Hono REST API (all `/api/*` routes). `withWorkspace` middleware resolves `:id` → workspace (404 if missing) and stashes it on the context, so handlers read `c.get('ws')`. Its catch-all serves the prebuilt client from `dist/` in prod via Hono's `serveStatic` (cached, traversal-safe).
 - `static.ts` exposes the `dist/` location (`DIST_DIR`), the `prebuilt` flag, and the prod SPA `distShell`. `events.ts` holds `publishEvent` (server→client live-event broadcast over `/api/workspaces/ws`) decoupled from `web.ts` to avoid an import cycle; `web.ts` wires it via `setEventServer`.
 - `state.ts` holds the connected chat clients and `broadcast()` (which also feeds the harness debug tap).

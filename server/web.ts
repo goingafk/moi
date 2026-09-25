@@ -6,6 +6,7 @@ import index from '../client/index.html'
 import { api } from './api'
 import { AttachmentUploadError } from './attachment-message'
 import { checkBindHost, getAuthPolicy, withAuth } from './auth'
+import { getAppConfig } from './app-config'
 import { PORT } from './constants'
 import { control } from './control'
 import { EVENTS_TOPIC, publishEvent, setEventServer } from './events'
@@ -76,7 +77,10 @@ function isClientMessage(value: unknown): value is ClientMessage {
 // WebSocket route below is behind `withAuth`.
 const shell = prebuilt ? withAuth(distShell) : index
 
-const HOST = process.env.HOST ?? '127.0.0.1'
+const HOST =
+  process.env.HOST ??
+  (getAuthPolicy().mode === 'tailnet-ip' ? getAppConfig().tailnetIp : null) ??
+  '127.0.0.1'
 const bindCheck = checkBindHost(HOST, getAuthPolicy())
 if (!bindCheck.ok) throw new Error(bindCheck.error)
 if (bindCheck.warning) console.warn(`[moi] ${bindCheck.warning}`)

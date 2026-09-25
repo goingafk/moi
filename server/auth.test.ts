@@ -11,10 +11,22 @@ import {
 import { CONTROL_HOST } from './constants'
 
 const TAILSCALE: AuthPolicy = resolveAuthPolicy(
-  { auth: 'tailscale', allowedUsers: ['Me@Example.com'] },
+  { auth: 'tailscale', allowedUsers: ['Me@Example.com'], tailnetIp: null, allowedIps: [] },
   false
 )
-const OFF: AuthPolicy = resolveAuthPolicy({ auth: 'off', allowedUsers: [] }, false)
+const OFF: AuthPolicy = resolveAuthPolicy(
+  { auth: 'off', allowedUsers: [], tailnetIp: null, allowedIps: [] },
+  false
+)
+const DIRECT: AuthPolicy = resolveAuthPolicy(
+  {
+    auth: 'tailnet-ip',
+    allowedUsers: [],
+    tailnetIp: '100.73.80.77',
+    allowedIps: ['100.76.135.60']
+  },
+  false
+)
 
 const SERVE_HOST = 'moi.tail1234.ts.net'
 
@@ -72,12 +84,23 @@ describe('isLoopbackAddress', () => {
 
 describe('resolveAuthPolicy', () => {
   test('unset auth is off under the dev supervisor and Tailscale otherwise', () => {
-    expect(resolveAuthPolicy({ auth: null, allowedUsers: [] }, true).mode).toBe('off')
-    expect(resolveAuthPolicy({ auth: null, allowedUsers: [] }, false).mode).toBe('tailscale')
+    expect(
+      resolveAuthPolicy({ auth: null, allowedUsers: [], tailnetIp: null, allowedIps: [] }, true)
+        .mode
+    ).toBe('off')
+    expect(
+      resolveAuthPolicy({ auth: null, allowedUsers: [], tailnetIp: null, allowedIps: [] }, false)
+        .mode
+    ).toBe('tailscale')
   })
 
   test('an explicit setting wins over dev', () => {
-    expect(resolveAuthPolicy({ auth: 'tailscale', allowedUsers: [] }, true).mode).toBe('tailscale')
+    expect(
+      resolveAuthPolicy(
+        { auth: 'tailscale', allowedUsers: [], tailnetIp: null, allowedIps: [] },
+        true
+      ).mode
+    ).toBe('tailscale')
   })
 })
 
@@ -154,7 +177,10 @@ describe('Tailscale mode', () => {
   })
 
   test('an empty allow-list refuses everyone', () => {
-    const empty = resolveAuthPolicy({ auth: 'tailscale', allowedUsers: [] }, false)
+    const empty = resolveAuthPolicy(
+      { auth: 'tailscale', allowedUsers: [], tailnetIp: null, allowedIps: [] },
+      false
+    )
     expect(authorizeRequest(serveRequest(), '127.0.0.1', empty)).toMatchObject({ status: 403 })
   })
 
@@ -193,6 +219,70 @@ describe('Tailscale mode', () => {
         status: 403
       })
     }
+  })
+})
+
+describe('direct Tailscale IP mode', () => {
+  function request(headers: Record<string, string> = {}, init: RequestInit = {}): Request {
+    return new Request('http://100.73.80.77:13337/api/config', {
+      ...init,
+      headers: { host: '100.73.80.77:13337', ...headers }
+    })
+  }
+
+  test('accepts the listed MacBook IP for HTTP and same-origin WebSockets', () => {
+    expect(authorizeRequest(request(), '100.76.135.60', DIRECT).ok).toBe(true)
+    expect(
+      authorizeRequest(
+        request({ origin: 'http://100.73.80.77:13337', upgrade: 'websocket' }),
+        '100.76.135.60',
+        DIRECT
+      ).ok
+    ).toBe(true)
+  })
+
+  test('refuses unlisted devices, local requests, spoofed proxy headers and wrong Hosts', () => {
+    for (const peer of ['100.76.135.61', '127.0.0.1', '192.168.1.8', null]) {
+      expect(authorizeRequest(request(), peer, DIRECT).ok).toBe(false)
+    }
+    expect(
+      authorizeRequest(
+        request({ 'tailscale-user-login': 'me@example.com' }),
+        '100.76.135.60',
+        DIRECT
+      ).ok
+    ).toBe(false)
+    expect(
+      authorizeRequest(request({ 'x-forwarded-proto': 'http' }), '100.76.135.60', DIRECT).ok
+    ).toBe(false)
+    expect(
+      authorizeRequest(request({ host: 'evil.example:13337' }), '100.76.135.60', DIRECT).ok
+    ).toBe(false)
+    expect(
+      authorizeRequest(request({ host: '100.73.80.77:bad' }), '100.76.135.60', DIRECT).ok
+    ).toBe(false)
+  })
+
+  test('refuses cross-site writes and WebSockets', () => {
+    expect(
+      authorizeRequest(
+        request({ origin: 'http://evil.example' }, { method: 'POST' }),
+        '100.76.135.60',
+        DIRECT
+      ).ok
+    ).toBe(false)
+    expect(
+      authorizeRequest(request({ origin: 'null', upgrade: 'websocket' }), '100.76.135.60', DIRECT)
+        .ok
+    ).toBe(false)
+  })
+
+  test('binds only the configured IP with a non-empty allow-list', () => {
+    expect(checkBindHost('100.73.80.77', DIRECT)).toEqual({ ok: true })
+    for (const host of ['0.0.0.0', '127.0.0.1', '100.73.80.78', '192.168.1.2']) {
+      expect(checkBindHost(host, DIRECT).ok).toBe(false)
+    }
+    expect(checkBindHost('100.73.80.77', { ...DIRECT, allowedIps: new Set() }).ok).toBe(false)
   })
 })
 
