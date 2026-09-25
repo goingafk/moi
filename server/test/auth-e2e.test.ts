@@ -100,10 +100,12 @@ function tryWebSocket(url: string, headers: Record<string, string>): Promise<'op
 
 function serveHeaders(login: string, host = 'moi.tail1234.ts.net'): Record<string, string> {
   return {
+    host,
     'x-forwarded-host': host,
     'x-forwarded-proto': 'https',
     'x-forwarded-for': '100.64.0.2',
-    'tailscale-user-login': login
+    'tailscale-user-login': login,
+    'tailscale-headers-info': 'https://tailscale.com/s/serve-headers'
   }
 }
 
@@ -185,4 +187,15 @@ test('auth off refuses to start on a non-loopback HOST', async () => {
   const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
   expect(code).not.toBe(0)
   expect(stderr).toContain('Refusing to listen on 0.0.0.0 with auth off')
+}, 60_000)
+
+test('Tailscale auth refuses to start on a non-loopback HOST', async () => {
+  const { proc } = spawnServer({
+    MOI_AUTH: 'tailscale',
+    MOI_ALLOWED_USERS: ALLOWED,
+    HOST: '0.0.0.0'
+  })
+  const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+  expect(code).not.toBe(0)
+  expect(stderr).toContain('Refusing to listen on 0.0.0.0 with auth tailscale')
 }, 60_000)

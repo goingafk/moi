@@ -65,7 +65,12 @@ export function isLoopbackAddress(address: string | null | undefined): boolean {
   const ip = stripBrackets(address.trim().toLowerCase())
   if (ip === '::1' || ip === '0:0:0:0:0:0:0:1') return true
   const v4 = ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip
-  return /^127(\.\d{1,3}){3}$/.test(v4)
+  const octets = v4.split('.')
+  return (
+    octets.length === 4 &&
+    octets[0] === '127' &&
+    octets.every(octet => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+  )
 }
 
 // A bind hostname or Host-header host (no port).
@@ -106,22 +111,48 @@ const CROSS_SITE_REASON = 'Cross-site requests to moi are not allowed.'
 // subresource loads, and `Sec-Fetch-Site` on all of them. A top-level
 // navigation from another site (a link to moi) stays allowed; it can't read
 // the response or carry a body.
-function crossSiteViolation(req: Request, expectedHost: string): boolean {
+function crossSiteViolation(req: Request, expectedOrigin: string): boolean {
   const origin = req.headers.get('origin')
   if (origin !== null) {
-    let originHost: string
+    let actualOrigin: string
     try {
-      originHost = new URL(origin).host
+      actualOrigin = new URL(origin).origin
     } catch {
       return true // includes the opaque "null" origin
     }
-    if (originHost.toLowerCase() !== expectedHost.toLowerCase()) return true
+    if (actualOrigin.toLowerCase() !== expectedOrigin.toLowerCase()) return true
   }
   const site = req.headers.get('sec-fetch-site')
   if (site === 'cross-site' || site === 'same-site') {
     return req.headers.get('sec-fetch-mode') !== 'navigate' || req.method !== 'GET'
   }
   return false
+}
+
+const TAILSCALE_HEADERS_INFO = 'https://tailscale.com/s/serve-headers'
+
+// Current Tailscale Serve sets all of these itself after stripping incoming
+// identity headers. Requiring the complete shape catches a bare forged login
+// header and accidental use behind another reverse proxy. Loopback remains the
+// ultimate trust boundary: a local process can forge the full shape and can
+// already drive moi through the unauthenticated control port.
+function tailscaleOrigin(req: Request): string | null {
+  if (req.headers.get('tailscale-headers-info') !== TAILSCALE_HEADERS_INFO) return null
+  if (req.headers.get('x-forwarded-proto')?.toLowerCase() !== 'https') return null
+  if (!req.headers.get('x-forwarded-for')?.trim()) return null
+
+  const host = req.headers.get('host')?.trim() ?? ''
+  const forwardedHost = req.headers.get('x-forwarded-host')?.trim() ?? ''
+  if (!host || host.toLowerCase() !== forwardedHost.toLowerCase()) return null
+
+  try {
+    const url = new URL(`https://${forwardedHost}`)
+    // Reject values parsed as credentials, paths, or other non-authority data.
+    if (url.host.toLowerCase() !== forwardedHost.toLowerCase()) return null
+    return url.origin
+  } catch {
+    return null
+  }
 }
 
 // ---- the decision -----------------------------------------------------------
@@ -156,12 +187,28 @@ export function authorizeRequest(
     if (!isLoopbackHostname(stripBrackets(hostWithoutPort(host)))) {
       return { ok: false, status: 403, reason: 'Open moi at localhost or 127.0.0.1.' }
     }
-    if (crossSiteViolation(req, host)) return { ok: false, status: 403, reason: CROSS_SITE_REASON }
+    let expectedOrigin: string
+    try {
+      expectedOrigin = new URL(`http://${host}`).origin
+    } catch {
+      return { ok: false, status: 403, reason: 'Open moi at localhost or 127.0.0.1.' }
+    }
+    if (crossSiteViolation(req, expectedOrigin)) {
+      return { ok: false, status: 403, reason: CROSS_SITE_REASON }
+    }
     return { ok: true, user: null }
   }
 
   if (req.headers.has('tailscale-funnel-request')) {
     return { ok: false, status: 403, reason: 'Public Tailscale Funnel requests are not allowed.' }
+  }
+  const expectedOrigin = tailscaleOrigin(req)
+  if (expectedOrigin === null) {
+    return {
+      ok: false,
+      status: 401,
+      reason: 'moi only accepts authenticated HTTPS requests through Tailscale Serve.'
+    }
   }
   const login = req.headers.get('tailscale-user-login')?.trim()
   if (!login) {
@@ -181,9 +228,7 @@ export function authorizeRequest(
       reason: `${login} is not allowed to use moi. Add it to allowedUsers in config.json or MOI_ALLOWED_USERS.`
     }
   }
-  // Serve sets X-Forwarded-Host to the Host the browser used.
-  const expectedHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
-  if (crossSiteViolation(req, expectedHost)) {
+  if (crossSiteViolation(req, expectedOrigin)) {
     return { ok: false, status: 403, reason: CROSS_SITE_REASON }
   }
   return { ok: true, user: login }
@@ -220,20 +265,14 @@ export function withAuth<S extends RequestIpSource, R extends Response | Promise
 
 export type BindCheck = { ok: true; warning?: string } | { ok: false; error: string }
 
-// Auth off trusts loopback, so it must never listen anywhere else. With
-// Tailscale auth a wider bind is not exploitable (non-loopback peers are
-// always refused) but it is never what you want: Serve connects over loopback.
+// Both modes depend on loopback as their trust boundary. Tailscale identity
+// headers are not cryptographically signed, so listening more widely would
+// make them forgeable by any peer that could reach the port directly.
 export function checkBindHost(host: string, policy: AuthPolicy): BindCheck {
   if (isLoopbackHostname(stripBrackets(host))) return { ok: true }
-  if (policy.mode === 'off') {
-    return {
-      ok: false,
-      error: `Refusing to listen on ${host} with auth off. Unset HOST to bind 127.0.0.1, or use MOI_AUTH=tailscale behind Tailscale Serve.`
-    }
-  }
   return {
-    ok: true,
-    warning: `Listening on ${host}. Only loopback requests from Tailscale Serve are accepted; other peers get 401. Unset HOST to bind 127.0.0.1.`
+    ok: false,
+    error: `Refusing to listen on ${host} with auth ${policy.mode}. Unset HOST to bind 127.0.0.1.`
   }
 }
 

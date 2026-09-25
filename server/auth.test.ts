@@ -23,7 +23,7 @@ function serveRequest(headers: Record<string, string> = {}, init: RequestInit = 
   return new Request('http://127.0.0.1:13337/api/config', {
     ...init,
     headers: {
-      host: '127.0.0.1:13337',
+      host: SERVE_HOST,
       'x-forwarded-host': SERVE_HOST,
       'x-forwarded-proto': 'https',
       'x-forwarded-for': '100.64.0.2',
@@ -54,6 +54,7 @@ describe('isLoopbackAddress', () => {
       '0.0.0.0',
       '::',
       '::ffff:10.0.0.1',
+      '127.999.0.1',
       '1127.0.0.1',
       '',
       null
@@ -89,7 +90,11 @@ describe('Tailscale mode', () => {
   })
 
   test('401 without an identity (direct local request, tagged device)', () => {
-    const decision = authorizeRequest(localRequest(), '127.0.0.1', TAILSCALE)
+    const decision = authorizeRequest(
+      serveRequest({ 'tailscale-user-login': '' }),
+      '127.0.0.1',
+      TAILSCALE
+    )
     expect(decision).toMatchObject({ ok: false, status: 401 })
   })
 
@@ -120,6 +125,23 @@ describe('Tailscale mode', () => {
       ok: false,
       status: 401
     })
+  })
+
+  test('refuses incomplete or inconsistent Serve headers', () => {
+    const cases = [
+      serveRequest({ 'tailscale-headers-info': '' }),
+      serveRequest({ 'x-forwarded-proto': 'http' }),
+      serveRequest({ 'x-forwarded-for': '' }),
+      serveRequest({ host: 'evil.example' }),
+      serveRequest({ 'x-forwarded-host': 'evil.example/path' }),
+      localRequest({ 'tailscale-user-login': 'me@example.com' })
+    ]
+    for (const req of cases) {
+      expect(authorizeRequest(req, '127.0.0.1', TAILSCALE)).toMatchObject({
+        ok: false,
+        status: 401
+      })
+    }
   })
 
   test('refuses Funnel traffic', () => {
@@ -153,6 +175,8 @@ describe('Tailscale mode', () => {
     const cases = [
       serveRequest({ origin: 'https://evil.example' }, { method: 'POST' }),
       serveRequest({ origin: 'null' }, { method: 'POST' }),
+      // Matching host with a downgraded scheme is still cross-origin.
+      serveRequest({ origin: `http://${SERVE_HOST}` }, { method: 'POST' }),
       // A cross-site WebSocket or fetch; the identity is the victim's.
       serveRequest({ origin: 'https://evil.example', upgrade: 'websocket' }),
       serveRequest({ 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'cors' }),
@@ -231,10 +255,10 @@ describe('checkBindHost', () => {
     }
   })
 
-  test('Tailscale auth warns on a non-loopback bind', () => {
-    const check = checkBindHost('0.0.0.0', TAILSCALE)
-    expect(check.ok).toBe(true)
-    expect(check.ok && check.warning).toContain('0.0.0.0')
+  test('Tailscale auth also refuses a non-loopback bind', () => {
+    for (const host of ['0.0.0.0', '::', '100.64.0.1', 'my-host']) {
+      expect(checkBindHost(host, TAILSCALE).ok).toBe(false)
+    }
   })
 })
 
