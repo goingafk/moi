@@ -73,19 +73,34 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Implemented per-session agent binding in the per-user data directory. The workspace type remains the default for new chats. Claude, Codex, and Ollama-backed Claude sessions can coexist in one workspace; listing, selected-session recovery, sending, Stop, events, archive, status snapshots, previews, debug routing, and workspace teardown were reviewed and routed appropriately. Existing histories are discovered and bound on first listing.
+- New sessions on a harness provision bundled skills into that harness's workspace skill directory. The implementation keeps the existing copy-based provisioning, which is idempotent and preserves unrelated workspace skills.
+- Added app-level Ollama server settings and a grouped model catalog. Discovery checks installed models, tool capability, and warm/cold state; the picker refreshes on open, disables models without tools, and starts a new chat when switching agents. Chat rows show their agent. Auto mode remains hidden; `modelMode` defaults to `manual` for Phase 7 compatibility.
+- Ollama chats run through Claude Code with a server-resolved local environment and a project-only, strict MCP profile. The configurable `localMcpServers` allow-list admits only named servers from that workspace's `.mcp.json`; default is none. Local profile settings do not leak into normal Claude chats.
+- Kept view builders on the workspace-default harness and picker, because their submission path is separate from ordinary chat and is not yet session-agent aware.
+- Fixed a first-send rename race: the server now persists the permanent session's agent/model before announcing its ID, and the client refetches that config instead of indefinitely displaying a copied temporary draft.
 
 ### Verification
 
-Not run.
+- `bun test`: 1,794 passed, 4 skipped, 0 failed after the rename-cache regression test; the HTTP/WebSocket tests required local loopback socket permission. The sandboxed run failed 25 socket-dependent tests with `EPERM`; the permitted rerun passed.
+- `bun run typecheck`: passed. `bun run lint`: passed with the same 9 pre-existing React warnings. `bun run format:check`: passed. `bun run build:client`: passed.
+- New tests cover model catalog IDs/grouping, picker selection across duplicate provider IDs, Ollama discovery/cache with a fake HTTP server, settings validation, per-session binding/immutability/rename, skill provisioning, local-vs-cloud environment isolation, and strict MCP metadata probes.
+- Live MacBook-to-Ollama probe: `qwen3.8:27b` at `100.125.20.45:11434` answered through Claude Code 2.1.282 with the local profile. Structured output confirmed a real `Bash(pwd)` tool call and result, and zero MCP servers loaded. The CLI did not hang on cloud MCP discovery. See `server/ollama/NOTES.md` for the verified API shapes and CLI warnings.
+- Production moi browser smoke test with isolated temporary data: added the Ollama server in Models settings, selected Qwen, sent a workspace-path prompt, and confirmed the permanent chat retained its Qwen binding after the rename fix. Switching that chat to Codex and then Claude created separate chats; all three answered and appeared with correct agent labels in the same workspace. The temporary test data was removed after the server and browser were stopped.
 
 ### Decisions
 
-None yet.
+- Add stable server IDs to the `{name, baseUrl}` setting so existing session bindings survive a server rename; removing a server makes its chats refuse to send until it is restored.
+- Keep skill copies rather than symlinks. The plan's symlink convention applies to this repository's `.agents`/`.claude` tree; `moi init` already copies skills into user workspaces, including on other machines.
+- Keep a session on one agent for its lifetime. Choosing another provider in the picker creates a new chat; Phase 7 may add explicit mid-session routing with continuity through memory.
+- Use the SDK's `strictMcpConfig` for local sessions while retaining project settings so workspace skills are loaded. The installed Claude Code 2.1.282 CLI documents the matching flag; a live local run succeeded without MCP startup hanging.
 
 ### Open items
 
-All Phase 2 tasks in `PLAN.md`.
+- Acceptance remains pending on the owner LXC: verify the container can reach the Ollama server, deploy this branch, add the server in Models settings, then exercise Claude, Codex, and Qwen chats and a tool/skill in each on that deployment. The MacBook test does not prove the container path.
+- The dev-bundled Models page hit an `Input` element-type runtime error during browser testing, while the production build rendered and worked. The dev-bundler-only failure has not been diagnosed; use the production build for the current deployment check.
+- The alternate-agent composer currently infers availability from a successful model-catalog row. A provider-specific login/health banner for non-default agents would improve expired-login feedback, but failed sends remain visible in chat.
+- Claude Code warns that `qwen3.8:27b` is not in its built-in model catalog and assumes a 200k-token context window. The model answered and used a tool; tune the context-window setting only if a real long-session limit appears.
 
 ## Phase 3 — Permission modes
 

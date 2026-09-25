@@ -9,12 +9,14 @@ type UiStore = {
   hasSentMessageFromMoi: boolean
   workspaceIdsPendingAnalysis: string[]
   composerDrafts: Record<string, string>
+  modelSelections: Record<string, string>
   viewBuilderDrafts: Record<string, string>
   dockedChatWidth: number
   setDiscoveredWorkspacesOpen: (open: boolean) => void
   markWorkspacePendingAnalysis: (workspaceId: string) => void
   markMessageSentFromMoi: (workspaceId: string) => void
   setComposerDraft: (workspaceId: string, value: string) => void
+  setModelSelection: (workspaceId: string, value: string) => void
   setViewBuilderDraft: (builderId: string, value: string | null) => void
   setDockedChatWidth: (width: number) => void
 }
@@ -27,6 +29,7 @@ export const createUiStore = (storage?: StateStorage) =>
         hasSentMessageFromMoi: false,
         workspaceIdsPendingAnalysis: [],
         composerDrafts: {},
+        modelSelections: {},
         viewBuilderDrafts: {},
         dockedChatWidth: 360,
         setDiscoveredWorkspacesOpen: open => set({ discoveredWorkspacesOpen: open }),
@@ -53,6 +56,8 @@ export const createUiStore = (storage?: StateStorage) =>
             else delete composerDrafts[workspaceId]
             return { composerDrafts }
           }),
+        setModelSelection: (workspaceId, value) =>
+          set(state => ({ modelSelections: { ...state.modelSelections, [workspaceId]: value } })),
         // Unlike composer drafts, an empty string stays stored: the composer
         // falls back to the builder's server-saved requirements when no draft
         // exists, and deleting all text must not resurrect them. Pass null to

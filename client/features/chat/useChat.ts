@@ -8,7 +8,8 @@ import {
   useSessionView,
   useWorkspaceSessions
 } from '@/client/features/chat/sessions/api'
-import { useWorkspaceAgent } from '@/client/features/workspace/api'
+import { useModelCatalog, useWorkspaceAgent } from '@/client/features/workspace/api'
+import { selectedCatalogModel } from './composer/catalog-selection'
 import { useSelectedSession } from '@/client/features/chat/sessions/useSelectedSession'
 import {
   type WorkspaceTabAddress,
@@ -38,9 +39,10 @@ import { toast } from '@/client/components/ui/toast'
 import { randomId } from '@/client/lib/random-id'
 import { emptyViewState } from '@/lib/format'
 import { messageAttachmentLimitError } from '@/lib/message-attachments'
-import type { Part, ViewState } from '@/lib/types'
+import type { CatalogModel, Part, ViewState } from '@/lib/types'
 
 const EMPTY: ViewState = emptyViewState()
+const EMPTY_CATALOG: CatalogModel[] = []
 
 // Thin projection over app-level state: the selected session comes from
 // useSelectedSession, spinner/error come from the live store, and the
@@ -55,6 +57,8 @@ export function useChat(address: WorkspaceTabAddress) {
   const { layout } = useWorkspaceLayoutCtx()
   const [selectedSession, selectSession] = useSelectedSession()
   const modelsData = useWorkspaceAgent(workspaceId).data
+  const catalog = useModelCatalog(workspaceId).data ?? EMPTY_CATALOG
+  const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
   const sessions = useWorkspaceSessions(workspaceId).data
   const selectedSessionMissing =
     Boolean(selectedSession) &&
@@ -122,6 +126,14 @@ export function useChat(address: WorkspaceTabAddress) {
       }
 
       let sid = selectedSessionId
+      const pickedModel = sessionConfig?.model ?? layout.selectedModel
+      const selected = selectedCatalogModel(
+        catalog,
+        sessionConfig?.agent ?? { type: modelsData?.provider ?? 'claude-code' },
+        pickedModel,
+        selectedSessionId ? undefined : draftSelection,
+        !selectedSessionId
+      )
       let isNew = false
       if (!sid) {
         sid = randomId()
@@ -136,6 +148,7 @@ export function useChat(address: WorkspaceTabAddress) {
           workspaceId,
           sessionId: sid,
           text,
+          agent: selected?.agent,
           filenames: ready.map(attachment => attachment.label)
         })
       }
@@ -158,15 +171,25 @@ export function useChat(address: WorkspaceTabAddress) {
       // the picker's concrete model even for an implicit or stale selection;
       // otherwise its config or resumed thread can choose a different model.
       // Validate effort and Fast mode against that same resolved row.
-      const pickedModel = sessionConfig?.model ?? layout.selectedModel
       const pickedEffort = sessionConfig?.effort ?? layout.selectedEffort
       const pickedFastMode = sessionConfig?.fastMode ?? layout.selectedFastMode
-      const { model, effort, fastMode, stream } = resolveChatRunOptions(
-        modelsData,
-        pickedModel,
-        pickedEffort,
-        pickedFastMode
-      )
+      const selectedModelsData = selected
+        ? {
+            ...modelsData,
+            provider: selected.agent.type === 'ollama' ? 'claude-code' : selected.agent.type,
+            models: [selected],
+            supportsStreaming: modelsData?.supportsStreaming ?? false
+          }
+        : modelsData
+      const { model, effort, fastMode, stream } =
+        selectedSessionId && !sessionConfig
+          ? { model: undefined, effort: undefined, fastMode: undefined, stream: undefined }
+          : resolveChatRunOptions(
+              selectedModelsData as typeof modelsData,
+              selected?.value ?? pickedModel,
+              pickedEffort,
+              pickedFastMode
+            )
       const { attachments } = prepared
       sendMessage({
         type: 'chat',
@@ -176,6 +199,7 @@ export function useChat(address: WorkspaceTabAddress) {
         isNew,
         optimisticId,
         model,
+        agent: selectedSessionId && !sessionConfig?.agent ? undefined : selected?.agent,
         effort,
         fastMode,
         stream,
@@ -202,11 +226,11 @@ export function useChat(address: WorkspaceTabAddress) {
       layout.selectedEffort,
       layout.selectedFastMode,
       buildMoiContext,
-      sessionConfig?.model,
-      sessionConfig?.effort,
-      sessionConfig?.fastMode,
+      sessionConfig,
       selectSession,
-      modelsData
+      modelsData,
+      catalog,
+      draftSelection
     ]
   )
 

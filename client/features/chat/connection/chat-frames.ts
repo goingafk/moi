@@ -95,6 +95,9 @@ export function reduceChatFrame(data: Record<string, unknown>, context: ChatFram
       queryClient?.setQueryData(workspaceKeys.sessionConfig(workspaceId, to), previousConfig)
       queryClient?.removeQueries({ queryKey: workspaceKeys.sessionConfig(workspaceId, from) })
     }
+    // The harness seeds startup model/agent settings under the permanent ID
+    // before publishing this frame. A copied temp-ID cache can be incomplete.
+    void queryClient?.invalidateQueries({ queryKey: workspaceKeys.sessionConfig(workspaceId, to) })
     if (!cachedSession) {
       queryClient?.invalidateQueries({ queryKey: sessionsKey })
     }

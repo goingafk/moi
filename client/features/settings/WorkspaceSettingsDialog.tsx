@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react'
 
-import { IconKey, IconPlugConnected, IconSettings } from '@tabler/icons-react'
+import { IconKey, IconPlugConnected, IconSettings, IconCpu } from '@tabler/icons-react'
 
 import { Button } from '@/client/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/client/components/ui/dialog'
@@ -8,13 +8,15 @@ import { Dialog, DialogContent, DialogTitle } from '@/client/components/ui/dialo
 import { ConnectorsSettings } from './ConnectorsSettings'
 import { EnvironmentSettings } from './EnvironmentSettings'
 import { GeneralSettings } from './GeneralSettings'
+import { ModelsSettings } from './ModelsSettings'
 
 export { DialogTrigger as WorkspaceSettingsDialogTrigger } from '@/client/components/ui/dialog'
 
-type SettingsNav = 'general' | 'connectors' | 'environment'
+type SettingsNav = 'general' | 'models' | 'connectors' | 'environment'
 
 const NAV: { id: SettingsNav; label: string; icon: typeof IconSettings }[] = [
   { id: 'general', label: 'General', icon: IconSettings },
+  { id: 'models', label: 'Models', icon: IconCpu },
   { id: 'connectors', label: 'Connectors', icon: IconPlugConnected },
   { id: 'environment', label: 'Environment', icon: IconKey }
 ]
@@ -55,6 +57,7 @@ export function WorkspaceSettingsDialog({ children }: WorkspaceSettingsDialogPro
         <div className="relative scrollbar-thin min-w-0 flex-1 overflow-y-auto">
           <div className="px-8 py-7">
             {page === 'general' && <GeneralSettings />}
+            {page === 'models' && <ModelsSettings />}
             {page === 'connectors' && <ConnectorsSettings />}
             {page === 'environment' && <EnvironmentSettings />}
           </div>

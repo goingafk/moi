@@ -52,7 +52,11 @@ function ChatHeaderLabel({ label }: ChatHeaderLabelProps) {
 export function sessionBadge(session: SessionInfo): string | null {
   if (session.flavor === 'cron' || session.flavor === 'subagent') return session.flavor
   const provider = session.origin?.provider.trim().toLowerCase()
-  return provider ? provider : null
+  if (provider) return provider
+  if (session.agent?.type === 'ollama') return 'Ollama'
+  if (session.agent?.type === 'claude-code') return 'Claude'
+  if (session.agent?.type === 'codex') return 'Codex'
+  return session.agent?.type ?? null
 }
 
 type ChatSessionItemProps = {
@@ -322,7 +326,12 @@ function SessionSelector() {
                       key={session.sessionId}
                       session={session}
                       active={selectedSessionId === session.sessionId}
-                      canArchive={canArchive}
+                      canArchive={
+                        session.agent?.type === 'claude-code' ||
+                        session.agent?.type === 'codex' ||
+                        session.agent?.type === 'ollama' ||
+                        canArchive
+                      }
                       confirmingArchive={confirmingSessionId === session.sessionId}
                       onSelect={selectSession}
                       onArchive={handleArchive}

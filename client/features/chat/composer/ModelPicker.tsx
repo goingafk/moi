@@ -6,13 +6,17 @@ import { IconBolt, IconBoltFilled } from '@tabler/icons-react'
 
 import { useSaveSessionConfig, useSessionConfig } from '../sessions/api'
 import { useWorkspaceAgent } from '@/client/features/workspace/api'
+import { useModelCatalog } from '@/client/features/workspace/api'
+import { useSelectedSession } from '../sessions/useSelectedSession'
+import { useUiStore } from '@/client/store/ui'
+import { sameSessionAgent } from '@/lib/session-agent'
+import { selectedCatalogModel } from './catalog-selection'
 import {
   groupModels,
   hasEffortChoice,
   resolveDisplayedEffort,
   resolveEffortIndex,
   resolveFastMode,
-  resolveSelectedModel,
   sortModelsByProviderOrder
 } from './model-order'
 import { Button } from '@/client/components/ui/button'
@@ -35,7 +39,7 @@ import { Slider } from '@/client/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/client/components/ui/tooltip'
 import { useWorkspaceLayoutCtx } from '@/client/features/workspace/WorkspaceLayoutContext'
 import { cn } from '@/client/lib/cn'
-import type { Model } from '@/lib/types'
+import type { CatalogModel } from '@/lib/types'
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -81,17 +85,18 @@ function PickerTrigger({ label, leadingIcon, className, ...props }: PickerTrigge
 
 type ModelDropdownProps = {
   current: string
-  model: Model
-  models: readonly Model[]
+  model: CatalogModel
+  models: readonly CatalogModel[]
+  onOpen: () => void
   onValueChange: (value: string) => void
 }
 
-function ModelDropdown({ current, model, models, onValueChange }: ModelDropdownProps) {
+function ModelDropdown({ current, model, models, onOpen, onValueChange }: ModelDropdownProps) {
   const label = model.displayName
   const groups = groupModels(models, 'Models')
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={open => open && onOpen()}>
       <DropdownMenuTrigger
         render={<PickerTrigger label={label} className="shrink" aria-label={`Model: ${label}`} />}
       />
@@ -101,7 +106,22 @@ function ModelDropdown({ current, model, models, onValueChange }: ModelDropdownP
             <DropdownMenuGroup key={group.label}>
               <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
               {group.models.map(item => (
-                <DropdownMenuRadioItem key={item.value} value={item.value} closeOnClick>
+                <DropdownMenuRadioItem
+                  key={item.selectionId}
+                  value={item.selectionId}
+                  closeOnClick
+                  disabled={Boolean(item.disabledReason)}
+                  title={item.disabledReason}
+                >
+                  {item.agent.type === 'ollama' && (
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'size-1.5 rounded-full',
+                        item.ready ? 'bg-green-500' : 'bg-muted-foreground/50'
+                      )}
+                    />
+                  )}
                   {item.displayName}
                 </DropdownMenuRadioItem>
               ))}
@@ -274,15 +294,24 @@ function EffortPicker({
 
 type ModelPickerProps = {
   sessionId: string | null
+  workspaceOnly?: boolean
 }
 
 // Model selector for composer surfaces. The workspace's available models come
 // from `/api/workspaces/:id/agent`; effort options follow the selected model.
 // A session id targets that chat's stored config. Null targets the workspace
 // defaults that seed new chats such as the view builder.
-export const ModelPicker = memo(function ModelPicker({ sessionId }: ModelPickerProps) {
+export const ModelPicker = memo(function ModelPicker({
+  sessionId,
+  workspaceOnly = false
+}: ModelPickerProps) {
   const { workspaceId, layout, setLayout } = useWorkspaceLayoutCtx()
   const { data } = useWorkspaceAgent(workspaceId)
+  const catalogQuery = useModelCatalog(workspaceId)
+  const catalog = workspaceOnly ? [] : (catalogQuery.data ?? [])
+  const [, selectSession] = useSelectedSession()
+  const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
+  const setDraftSelection = useUiStore(state => state.setModelSelection)
 
   // The SDK prepends a synthetic "default" entry ("Use the default model
   // (currently …)"). Drop it and name the concrete model it resolves to.
@@ -318,8 +347,54 @@ export const ModelPicker = memo(function ModelPicker({ sessionId }: ModelPickerP
     else setLayout({ selectedFastMode: value })
   }
 
-  const model = resolveSelectedModel(models, selectedModel, defaultEntry?.resolvedModel)
+  const boundAgent = sessionId ? sessionConfig?.agent : undefined
+  const selected = selectedCatalogModel(
+    catalog,
+    boundAgent ?? { type: data?.provider ?? 'claude-code' },
+    selectedModel,
+    sessionId || workspaceOnly ? undefined : draftSelection,
+    !sessionId
+  )
+  const catalogModels: CatalogModel[] =
+    catalog.length > 0
+      ? catalog
+      : models.map(model => ({
+          ...model,
+          selectionId: model.value,
+          agent: { type: data?.provider ?? 'claude-code' }
+        }))
+  const unavailableBoundModel: CatalogModel | undefined =
+    boundAgent && sessionConfig?.model
+      ? {
+          value: sessionConfig.model,
+          displayName: `${sessionConfig.model} (unavailable)`,
+          selectionId: `unavailable:${sessionConfig.model}`,
+          agent: boundAgent,
+          disabledReason: 'This model is currently unavailable'
+        }
+      : undefined
+  const model =
+    selected ??
+    unavailableBoundModel ??
+    catalogModels.find(item => item.value === selectedModel) ??
+    catalogModels.find(
+      item => (item.resolvedModel ?? item.value) === defaultEntry?.resolvedModel
+    ) ??
+    catalogModels[0]
   if (!model) return null
+  const chooseModel = (value: string) => {
+    const next = catalogModels.find(row => row.selectionId === value)
+    if (!next || next.disabledReason) return
+    if (sessionId && boundAgent && sameSessionAgent(boundAgent, next.agent)) {
+      setSelectedModel(next.value)
+    } else if (sessionId) {
+      setDraftSelection(workspaceId, value)
+      selectSession(null)
+    } else {
+      if (workspaceOnly) setLayout({ selectedModel: next.value })
+      else setDraftSelection(workspaceId, value)
+    }
+  }
   const effortLevels = model.supportsEffort ? (model.supportedEffortLevels ?? []) : []
   const currentEffort = resolveDisplayedEffort(effortLevels, selectedEffort, model.defaultEffort)
   const showEffort = hasEffortChoice(effortLevels) && currentEffort !== undefined
@@ -328,10 +403,13 @@ export const ModelPicker = memo(function ModelPicker({ sessionId }: ModelPickerP
   return (
     <div className="flex min-w-0 items-center gap-1">
       <ModelDropdown
-        current={model.value}
+        current={model.selectionId}
         model={model}
-        models={models}
-        onValueChange={setSelectedModel}
+        models={catalogModels}
+        onOpen={() => {
+          if (!workspaceOnly) void catalogQuery.refetch()
+        }}
+        onValueChange={chooseModel}
       />
       {!showEffort && model.supportsFastMode && (
         <FastModeToggle fastMode={fastMode} onChange={setSelectedFastMode} />

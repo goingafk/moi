@@ -259,7 +259,7 @@ export function ChatComposer({
             </Tooltip>
           )}
         </div>
-        <ModelPicker sessionId={modelSessionId} />
+        <ModelPicker sessionId={modelSessionId} workspaceOnly={Boolean(draft)} />
         {processing ? (
           <Tooltip>
             <TooltipTrigger

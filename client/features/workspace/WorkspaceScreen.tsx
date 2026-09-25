@@ -290,15 +290,14 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
     selectSession,
     dismissError
   } = useChat({ activeTab, appletParams })
-  const { composerBanner, builderComposerBanner, agentAvailability } = useWorkspaceComposerState(
-    workspaceId,
-    {
+  const { composerBanner, builderComposerBanner, agentAvailability, builderAgentAvailability } =
+    useWorkspaceComposerState(workspaceId, {
+      sessionId,
       chatError: error,
       onDismissChatError: dismissError,
       chatLoadError: loadError,
       onRetryChatLoad: retryLoad
-    }
-  )
+    })
 
   const openSet = new Set(tabsState.open)
 
@@ -615,7 +614,7 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
       sessionId={sessionId}
       processing={processing}
       composerBanner={activeDraftBuilder ? builderComposerBanner : composerBanner}
-      agentAvailability={agentAvailability}
+      agentAvailability={activeDraftBuilder ? builderAgentAvailability : agentAvailability}
       send={send}
       stop={stop}
       onNavigateFromWelcome={navigateFromWelcome}
@@ -815,7 +814,7 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
               sessionId={sessionId}
               processing={processing}
               composerBanner={activeDraftBuilder ? builderComposerBanner : composerBanner}
-              agentAvailability={agentAvailability}
+              agentAvailability={activeDraftBuilder ? builderAgentAvailability : agentAvailability}
               send={send}
               stop={stop}
               onNavigateFromWelcome={navigateFromWelcome}

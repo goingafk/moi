@@ -89,13 +89,16 @@ export function sortModelsByProviderOrder(models: Model[], provider: WorkspaceTy
   return compare ? stableSortModels(models, compare) : models
 }
 
-export type ModelGroup = { label: string; models: Model[] }
+export type ModelGroup<T extends Model = Model> = { label: string; models: T[] }
 
 // Picker sections. Backends that group their catalog (Hermes, by upstream
 // provider) get one section per `group`, in first-appearance order; everything
 // else stays a single "Models" section.
-export function groupModels(models: readonly Model[], fallbackLabel: string): ModelGroup[] {
-  const groups: ModelGroup[] = []
+export function groupModels<T extends Model>(
+  models: readonly T[],
+  fallbackLabel: string
+): ModelGroup<T>[] {
+  const groups: ModelGroup<T>[] = []
   for (const model of models) {
     const label = model.group ?? fallbackLabel
     const existing = groups.find(group => group.label === label)

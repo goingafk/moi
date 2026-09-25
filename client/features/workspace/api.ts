@@ -7,6 +7,7 @@ import { WORKSPACE_RESOURCE_OPTIONS } from '@/client/api/query-options'
 import { workspaceKeys } from '@/client/api/workspace-keys'
 import { onWorkspaceEventsReconnect, useWorkspaceEvent } from '@/client/runtime/useWorkspaceEvents'
 import type {
+  CatalogModel,
   HarnessLogin,
   WorkspaceAgent,
   WorkspaceLayout,
@@ -14,6 +15,15 @@ import type {
   WorkspaceSkillsUpdateFailure,
   WorkspaceType
 } from '@/lib/types'
+
+export function useModelCatalog(workspaceId: string) {
+  return useQuery<CatalogModel[]>({
+    queryKey: workspaceKeys.models(workspaceId),
+    queryFn: () => requestJson(`/api/workspaces/${workspaceId}/models?refresh=1`),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true
+  })
+}
 
 export type WorkspaceLayoutResponse = WorkspaceLayout & {
   cwd: string

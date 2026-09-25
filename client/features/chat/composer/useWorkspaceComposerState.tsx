@@ -1,4 +1,11 @@
-import { startWorkspaceLogin, useWorkspaceAgent } from '@/client/features/workspace/api'
+import {
+  startWorkspaceLogin,
+  useModelCatalog,
+  useWorkspaceAgent
+} from '@/client/features/workspace/api'
+import { useSessionConfig } from '../sessions/api'
+import { selectedCatalogModel } from './catalog-selection'
+import { useUiStore } from '@/client/store/ui'
 import { resolveAgentAvailability, type AgentAvailability } from '@/client/lib/agent-availability'
 
 import { ErrorBanner } from './banners/ErrorBanner'
@@ -8,6 +15,7 @@ import { SkillUpdateBanner } from './banners/SkillUpdateBanner'
 import { useWorkspaceSkillUpdates } from './useWorkspaceSkillUpdates'
 
 type WorkspaceComposerStateOptions = {
+  sessionId: string | null
   chatError: string | null
   onDismissChatError: () => void
   chatLoadError?: string | null
@@ -18,16 +26,37 @@ type WorkspaceComposerState = {
   composerBanner?: ComposerBanner
   builderComposerBanner?: ComposerBanner
   agentAvailability: AgentAvailability
+  builderAgentAvailability: AgentAvailability
 }
 
 export function useWorkspaceComposerState(
   workspaceId: string,
-  { chatError, onDismissChatError, chatLoadError, onRetryChatLoad }: WorkspaceComposerStateOptions
+  {
+    sessionId,
+    chatError,
+    onDismissChatError,
+    chatLoadError,
+    onRetryChatLoad
+  }: WorkspaceComposerStateOptions
 ): WorkspaceComposerState {
   const { data: agent, error } = useWorkspaceAgent(workspaceId)
+  const catalog = useModelCatalog(workspaceId).data
+  const sessionConfig = useSessionConfig(workspaceId, sessionId).data
+  const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
   const availability = agent?.availability
   const { bannerProps: skillUpdateBanner } = useWorkspaceSkillUpdates(workspaceId)
-  const agentAvailability = resolveAgentAvailability(availability, Boolean(error))
+  const workspaceAvailability = resolveAgentAvailability(availability, Boolean(error))
+  const selected = selectedCatalogModel(
+    catalog ?? [],
+    sessionConfig?.agent ?? { type: agent?.provider ?? 'claude-code' },
+    sessionConfig?.model,
+    sessionId ? undefined : draftSelection,
+    !sessionId
+  )
+  const alternate = selected && selected.agent.type !== agent?.provider
+  const agentAvailability: AgentAvailability = alternate
+    ? { status: 'available' }
+    : workspaceAvailability
   const unavailable =
     agentAvailability.status === 'checking' || agentAvailability.status === 'available'
       ? undefined
@@ -69,9 +98,26 @@ export function useWorkspaceComposerState(
     skillUpdate
   })
   const builderComposerBanner = resolveComposerBanner({
-    agentUnavailable: agentUnavailableBanner,
+    agentUnavailable:
+      workspaceAvailability.status === 'checking' || workspaceAvailability.status === 'available'
+        ? undefined
+        : {
+            tone: 'default',
+            content: (
+              <AgentAvailabilityBanner
+                availability={workspaceAvailability}
+                login={agent?.login}
+                onStartLogin={() => startWorkspaceLogin(workspaceId)}
+              />
+            )
+          },
     skillUpdate
   })
 
-  return { agentAvailability, composerBanner, builderComposerBanner }
+  return {
+    agentAvailability,
+    builderAgentAvailability: workspaceAvailability,
+    composerBanner,
+    builderComposerBanner
+  }
 }
