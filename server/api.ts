@@ -662,6 +662,19 @@ one.put('/sessions/:sessionId/config', async c => {
     }
     patch.fastMode = value
   }
+  if ('permissionMode' in record) {
+    const mode = record.permissionMode
+    if (mode !== 'auto' && mode !== 'ask-risky' && mode !== 'ask-all') {
+      return c.text('permissionMode must be auto, ask-risky or ask-all', 400)
+    }
+    if (
+      mode === 'ask-all' &&
+      (await sessionAgentFor(c.get('ws'), c.req.param('sessionId'))).type === 'codex'
+    ) {
+      return c.text('Codex cannot ask before every tool call', 400)
+    }
+    patch.permissionMode = mode
+  }
   return c.json(await saveSessionConfig(c.get('ws').path, c.req.param('sessionId'), patch))
 })
 

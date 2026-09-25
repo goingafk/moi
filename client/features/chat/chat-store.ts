@@ -2,7 +2,7 @@ import type { StagedAttachment, StagedAttachmentPatch } from './composer/attachm
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 
-import type { PreviewBlock, PreviewFrame, SessionActivity } from '@/lib/types'
+import type { ApprovalRequest, PreviewBlock, PreviewFrame, SessionActivity } from '@/lib/types'
 
 // App-level ephemeral chat state — the bits that are *pushed* from the server
 // over the WebSocket and can't be re-fetched as request/response data:
@@ -82,6 +82,7 @@ export type LiveStore = {
   // Per-session activity mirrored from server `status` frames. Missing key = idle.
   activity: Record<string, SessionActivity>
   errors: Record<string, string | null>
+  approvals: Record<string, ApprovalRequest>
   // Live token-streaming previews, keyed by `messageId` (the API `msg_...` id)
   // so concurrent streams never collide. Reconciled against the durable
   // transcript: a preview is dropped the instant its finalized turn arrives.
@@ -98,6 +99,9 @@ export type LiveStore = {
     sessions: { workspaceId: string; sessionId: string; activity: SessionActivity }[]
   ) => void
   setError: (workspaceId: string, sessionId: string, message: string | null) => void
+  setApprovals: (items: ApprovalRequest[]) => void
+  addApproval: (item: ApprovalRequest) => void
+  removeApproval: (id: string) => void
   addAttachments: (workspaceId: string, sessionId: string | null, items: StagedAttachment[]) => void
   updateAttachment: (workspaceId: string, localId: string, patch: StagedAttachmentPatch) => void
   removeAttachment: (workspaceId: string, localId: string) => void
@@ -135,6 +139,7 @@ export function findAttachment(
 export const liveStore = createStore<LiveStore>()(set => ({
   activity: {},
   errors: {},
+  approvals: {},
   previews: {},
   attachments: {},
 
@@ -148,6 +153,15 @@ export const liveStore = createStore<LiveStore>()(set => ({
 
   setError: (workspaceId, sessionId, message) =>
     set(s => ({ errors: { ...s.errors, [key(workspaceId, sessionId)]: message } })),
+
+  setApprovals: items => set({ approvals: Object.fromEntries(items.map(item => [item.id, item])) }),
+  addApproval: item => set(s => ({ approvals: { ...s.approvals, [item.id]: item } })),
+  removeApproval: id =>
+    set(s => {
+      const approvals = { ...s.approvals }
+      delete approvals[id]
+      return { approvals }
+    }),
 
   setPreview: frame =>
     set(s => ({
@@ -280,7 +294,15 @@ export const liveStore = createStore<LiveStore>()(set => ({
         }
         delete attachments[fromKey]
       }
-      return { activity, errors, previews, attachments }
+      const approvals = Object.fromEntries(
+        Object.entries(s.approvals).map(([id, item]) => [
+          id,
+          item.workspaceId === workspaceId && item.sessionId === from
+            ? { ...item, sessionId: to }
+            : item
+        ])
+      )
+      return { activity, errors, previews, attachments, approvals }
     })
 }))
 

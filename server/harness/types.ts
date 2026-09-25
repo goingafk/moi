@@ -2,7 +2,7 @@
 // by moi. See README.md in this folder for the full checklist and the
 // message-type layers; each harness's index.ts exports one Harness object
 // wrapping its session/adapter/transport modules.
-import type { MessageAttachment } from '@/lib/types'
+import type { MessageAttachment, PermissionMode, SessionAgent } from '@/lib/types'
 import type { MoiContext } from '@/lib/moi-context'
 import type {
   HarnessAvailability,
@@ -33,6 +33,8 @@ export type SendMessageInput = {
   model?: string
   // Server-resolved provider profile, never accepted from a browser frame.
   agentEnv?: Record<string, string>
+  agent?: SessionAgent
+  permissionMode?: PermissionMode
   effort?: string
   fastMode?: boolean
   stream?: boolean

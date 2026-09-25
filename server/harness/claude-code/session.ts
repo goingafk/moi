@@ -17,11 +17,11 @@ import {
 
 import { buildSessionTitleSource } from '../session-title'
 import { ClaudeAdapter } from './adapter'
-import { CLAUDE_APPROVAL_HOOKS } from './permissions'
+import { claudeApprovalHooks } from './permissions'
 import { claudeSessionExists } from './sessions'
 import { generateClaudeSessionTitle, renameClaudeSessionIfUnchanged } from './session-title'
 import type { Part } from '@/lib/format'
-import type { SessionActivity } from '@/lib/types'
+import type { PermissionMode, SessionActivity, SessionAgent } from '@/lib/types'
 import { moiContextSystemReminder, renderMoiContext } from '@/lib/moi-context'
 
 import { debug } from '../../debug'
@@ -36,6 +36,12 @@ import {
 } from '../../view-builders'
 import { resolveWorkspaceEnv } from '../../workspace-env'
 import { localMcpConfig } from '../../ollama/mcp'
+import {
+  cancelSessionApprovals,
+  renameSessionApprovals,
+  reviewTool
+} from '../../permissions/pending'
+import { toolRequest } from '../../permissions/normalize'
 import { requireHarnessExecutable } from '../executable'
 import type { SendMessageInput } from '../types'
 
@@ -136,6 +142,7 @@ type LiveSession = {
   effort: string | undefined
   // `includePartialMessages` is fixed at creation, so changes require resume.
   stream: boolean
+  permissionMode: PermissionMode
   // Rebuild before the next send, once this turn and background tasks finish.
   staleCli: boolean
   idleTimer: ReturnType<typeof setTimeout> | null
@@ -434,6 +441,7 @@ async function consume(s: LiveSession) {
           renamedFrom = from
           // Carry any config the picker wrote under the temp id to the real id.
           await renameSessionConfig(s.workspacePath, from, s.sessionId)
+          renameSessionApprovals(s.workspaceId, from, s.sessionId)
           await renameSelectedSession(s.workspacePath, from, s.sessionId)
           await renameViewBuilderSession(s.workspaceId, s.workspacePath, from, s.sessionId)
         }
@@ -616,6 +624,8 @@ function createLiveSession(input: {
   effort: string | undefined
   fastMode: boolean | undefined
   stream: boolean
+  permissionMode: PermissionMode
+  agent: SessionAgent
   // Resolved workspace env, fixed for the lifetime of the subprocess.
   workspaceEnv: Record<string, string>
   localMcpServers?: NonNullable<Options['mcpServers']>
@@ -644,8 +654,25 @@ function createLiveSession(input: {
     // Every tool call is approved before the permission system runs — see
     // `permissions.ts`. `canUseTool` stays as the fallback for anything that
     // reaches a prompt without passing through `PreToolUse`.
-    hooks: CLAUDE_APPROVAL_HOOKS,
-    canUseTool: async (_toolName, toolInput) => ({ behavior: 'allow', updatedInput: toolInput }),
+    hooks: claudeApprovalHooks({
+      workspaceId: input.workspaceId,
+      sessionId: () => input.messages.sessionId,
+      workspacePath: input.workspacePath,
+      agent: input.agent,
+      mode: input.permissionMode
+    }),
+    canUseTool: async (toolName, toolInput, options) => {
+      const decision = await reviewTool(
+        input.workspaceId,
+        input.messages.sessionId,
+        input.permissionMode,
+        toolRequest(input.agent, toolName, toolInput, input.workspacePath),
+        options.signal
+      )
+      return decision.decision === 'deny'
+        ? { behavior: 'deny', message: decision.note || 'Denied in moi' }
+        : { behavior: 'allow', updatedInput: toolInput }
+    },
     settingSources: input.localMcpServers ? ['project'] : ['user', 'project'],
     ...(input.localMcpServers ? { strictMcpConfig: true, mcpServers: input.localMcpServers } : {}),
     // MOI_AGENT marks every shell this session spawns as agent-driven (the
@@ -674,6 +701,7 @@ function createLiveSession(input: {
     fastMode: input.fastMode,
     effort: input.effort,
     stream: input.stream,
+    permissionMode: input.permissionMode,
     staleCli: false,
     idleTimer: null,
     closed: false,
@@ -780,6 +808,7 @@ async function dispatchNextMessage(messages: SessionMessages): Promise<void> {
     s &&
     (s.staleCli ||
       stream !== s.stream ||
+      (input.permissionMode ?? 'auto') !== s.permissionMode ||
       Object.entries(input.agentEnv ?? {}).some(([key, value]) => s?.workspaceEnv[key] !== value))
   // Background jobs belong to their subprocess. Retain both the job and the
   // queued prompt until it is safe to resume with the requested configuration.
@@ -812,6 +841,8 @@ async function dispatchNextMessage(messages: SessionMessages): Promise<void> {
         effort: input.effort,
         fastMode: input.fastMode,
         stream,
+        permissionMode: input.permissionMode ?? 'auto',
+        agent: input.agent ?? { type: 'claude-code' },
         workspaceEnv,
         localMcpServers:
           input.agentEnv?.ANTHROPIC_AUTH_TOKEN === 'ollama'
@@ -896,6 +927,7 @@ const INTERRUPT_TIMEOUT_MS = 5_000
 // Cancel queued sends and interrupt the active turn. A failed or timed-out
 // interrupt closes the process so the next send can resume in a fresh one.
 export async function interruptCCSession(workspaceId: string, sessionId: string): Promise<void> {
+  cancelSessionApprovals(workspaceId, sessionId)
   const messages = messageQueues.get(liveKey(workspaceId, sessionId))
   if (!messages) return
   messages.stopping = true

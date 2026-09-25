@@ -1,13 +1,26 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   CODEX_LOCAL_CONTROL_CONTEXT,
   CODEX_LOCAL_CONTROL_FALLBACK,
   CODEX_THREAD_ACCESS,
   CODEX_TURN_ACCESS,
-  codexServerRequestResponse
+  codexServerRequestResponse,
+  handleCodexServerRequest,
+  registerCodexApprovalContext,
+  removeCodexApprovalContext
 } from './permissions'
 import { stripMoiContext } from '@/lib/moi-context'
+import {
+  answerApproval,
+  cancelSessionApprovals,
+  flushPermissionAudit,
+  pendingApprovalSnapshot,
+  setPermissionAuditDir
+} from '../../permissions/pending'
 
 describe('Codex reviewed access', () => {
   test('defines sandboxed workspace access for threads', () => {
@@ -75,4 +88,40 @@ describe('codexServerRequestResponse', () => {
       })
     }
   })
+})
+
+test('Codex ask-risky approval waits for the browser and answers in native vocabulary', async () => {
+  const auditDir = await mkdtemp(join(tmpdir(), 'moi-codex-approval-'))
+  setPermissionAuditDir(auditDir)
+  const context = {
+    workspaceId: 'codex-workspace',
+    sessionId: 'thread-1',
+    workspacePath: '/tmp/codex-workspace',
+    mode: 'ask-risky' as const
+  }
+  registerCodexApprovalContext(context)
+  try {
+    const result = handleCodexServerRequest(
+      context.workspacePath,
+      'item/commandExecution/requestApproval',
+      { threadId: context.sessionId, command: 'git push origin main' }
+    )
+    const request = pendingApprovalSnapshot().find(item => item.sessionId === context.sessionId)
+    expect(request?.reason).toContain('Git')
+    expect(
+      answerApproval(context.workspaceId, context.sessionId, request!.id, 'once', 'test browser')
+    ).toBe(true)
+    expect(await result).toEqual({ result: { decision: 'accept' } })
+    const denied = await handleCodexServerRequest(
+      context.workspacePath,
+      'item/commandExecution/requestApproval',
+      { threadId: 'unknown', command: 'git push origin main' }
+    )
+    expect(denied).toEqual({ result: { decision: 'decline' } })
+  } finally {
+    cancelSessionApprovals(context.workspaceId, context.sessionId)
+    removeCodexApprovalContext(context.workspacePath, context.sessionId)
+    await flushPermissionAudit()
+    await rm(auditDir, { recursive: true, force: true })
+  }
 })

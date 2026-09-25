@@ -24,6 +24,7 @@ import {
   resolveChatEmptyState
 } from './messages/ChatEmptyState'
 import { ChatSelector } from './sessions/ChatSelector'
+import { ApprovalCard } from './ApprovalCard'
 import { TurnView } from './messages/TurnView'
 import { Button } from '@/client/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/client/components/ui/tooltip'
@@ -107,6 +108,14 @@ export function ChatPanel({
     (state.attachments[attachmentKey(workspaceId, effectiveSessionId)] ?? []).some(
       attachment => attachment.kind !== 'text' && attachment.status === 'uploading'
     )
+  )
+  const approvals = useLive(state => state.approvals)
+  const currentApprovals = useMemo(
+    () =>
+      Object.values(approvals).filter(
+        item => item.workspaceId === workspaceId && item.sessionId === effectiveSessionId
+      ),
+    [approvals, workspaceId, effectiveSessionId]
   )
   const promptDisabled = !canSubmitComposerAction(true, attachmentsUploading, agentAvailability)
   // Visual grouping: fold consecutive tool-only assistant turns into one
@@ -260,6 +269,8 @@ export function ChatPanel({
           )}
         >
           {composerBanner?.content}
+          {!builderDraft &&
+            currentApprovals.map(request => <ApprovalCard key={request.id} request={request} />)}
           <ChatComposer
             composerRef={composerRef}
             onSend={handleSend}

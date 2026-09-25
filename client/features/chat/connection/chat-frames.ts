@@ -7,6 +7,7 @@ import { bufferSessionEvent } from '@/client/features/chat/sessions/session-view
 import { renameSelectedSessionInCache } from '@/client/features/chat/sessions/useSelectedSession'
 import { applyEvent } from '@/lib/format'
 import type {
+  ApprovalRequest,
   ClientMessage,
   PreviewFrame,
   ScratchOp,
@@ -33,6 +34,15 @@ export function reduceChatFrame(data: Record<string, unknown>, context: ChatFram
         | { workspaceId: string; sessionId: string; activity: SessionActivity }[]
         | undefined) ?? []
     )
+    store.setApprovals((data.approvals as ApprovalRequest[] | undefined) ?? [])
+    return
+  }
+  if (data.type === 'approval:request') {
+    store.addApproval(data.request as ApprovalRequest)
+    return
+  }
+  if (data.type === 'approval:resolved') {
+    store.removeApproval(data.requestId as string)
     return
   }
   if (data.type === 'status') {

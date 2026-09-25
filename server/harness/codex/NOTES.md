@@ -8,6 +8,27 @@ moi holds a display copy and translates native items into shared chat events.
 The upstream [app-server specification](https://learn.chatgpt.com/docs/app-server)
 defines the protocol; generated types from the installed CLI define its exact wire shapes.
 
+## Phase 3 approval mechanism
+
+Verified against installed `codex-cli 0.153.4` by generating its app-server
+TypeScript schema. The server sends `item/commandExecution/requestApproval`,
+`item/fileChange/requestApproval`, and `item/permissions/requestApproval`
+requests; responses use `accept`/`acceptForSession`/`decline` for the first
+two, and a filtered permission grant plus `turn`/`session` scope for the last.
+The legacy `execCommandApproval` and `applyPatchApproval` methods have a
+different `approved`/`denied` vocabulary. Transport routes these requests to
+the session-bound UI reviewer; an unknown thread is denied.
+
+`approvalPolicy: on-request` with `workspace-write` is retained in every
+mode. In `auto`, native requests receive the pre-existing automatic answer.
+In `ask-risky`, requests are classified and may wait for a browser answer.
+This is **not** a full tool-call interceptor: sandbox-allowed commands may
+run without any app-server approval request. `Ask all` is therefore disabled
+for Codex in both UI and server validation. The CLI schema lists an
+`untrusted` approval policy, but current official Codex documentation calls
+that policy retired; moi does not depend on it. Denial notes are not carried
+by these native response shapes, so Codex only receives the denial.
+
 ## Module ownership
 
 | Module                                 | Responsibility                                                                                                         |

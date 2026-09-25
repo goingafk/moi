@@ -27,6 +27,20 @@ afterEach(async () => {
 })
 
 describe('app settings API', () => {
+  const permissions = {
+    defaults: { claude: 'auto', codex: 'auto', ollama: 'ask-risky' },
+    rules: {
+      outsideProject: true,
+      deletes: true,
+      network: true,
+      gitDangerous: true,
+      system: true,
+      sensitiveFiles: true,
+      unparseableShell: true
+    },
+    alwaysAsk: [],
+    alwaysAllow: []
+  } satisfies AppSettings['permissions']
   test('returns defaults before anything is saved', async () => {
     const response = await api.request('/api/settings')
     const settings = (await response.json()) as AppSettings
@@ -36,7 +50,8 @@ describe('app settings API', () => {
       autoUpdateSkills: false,
       modelMode: 'manual',
       ollamaServers: [],
-      localMcpServers: []
+      localMcpServers: [],
+      permissions
     })
   })
 
@@ -54,7 +69,8 @@ describe('app settings API', () => {
       autoUpdateSkills: true,
       modelMode: 'manual',
       ollamaServers: [],
-      localMcpServers: []
+      localMcpServers: [],
+      permissions
     })
 
     const readBack = await api.request('/api/settings')
@@ -68,7 +84,8 @@ describe('app settings API', () => {
           autoUpdateSkills: true,
           modelMode: 'manual',
           ollamaServers: [],
-          localMcpServers: []
+          localMcpServers: [],
+          permissions
         }
       }
     ])
@@ -92,7 +109,8 @@ describe('app settings API', () => {
       autoUpdateSkills: false,
       modelMode: 'manual',
       ollamaServers: [],
-      localMcpServers: []
+      localMcpServers: [],
+      permissions
     })
   })
 

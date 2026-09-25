@@ -21,6 +21,12 @@ import { getWorkspace } from './registry'
 import { saveSelectedSession } from './selected-session'
 import { harnessForSessionAgent, resolveSessionRun, sessionAgentFor } from './session-routing'
 import {
+  answerApproval,
+  cancelSessionApprovals,
+  hasPendingApproval,
+  pendingApprovalSnapshot
+} from './permissions/pending'
+import {
   addClient,
   broadcast,
   broadcastAll,
@@ -46,6 +52,10 @@ function isClientMessage(value: unknown): value is ClientMessage {
     optimisticId?: unknown
     model?: unknown
     agent?: unknown
+    permissionMode?: unknown
+    requestId?: unknown
+    decision?: unknown
+    note?: unknown
     effort?: unknown
     fastMode?: unknown
     stream?: unknown
@@ -62,6 +72,10 @@ function isClientMessage(value: unknown): value is ClientMessage {
       (v.optimisticId === undefined || typeof v.optimisticId === 'string') &&
       (v.model === undefined || typeof v.model === 'string') &&
       (v.agent === undefined || isSessionAgent(v.agent)) &&
+      (v.permissionMode === undefined ||
+        v.permissionMode === 'auto' ||
+        v.permissionMode === 'ask-risky' ||
+        v.permissionMode === 'ask-all') &&
       (v.effort === undefined || typeof v.effort === 'string') &&
       (v.fastMode === undefined || typeof v.fastMode === 'boolean') &&
       (v.stream === undefined || typeof v.stream === 'boolean') &&
@@ -69,6 +83,14 @@ function isClientMessage(value: unknown): value is ClientMessage {
       (v.attachments === undefined || isMessageAttachments(v.attachments))
     )
   if (v.type === 'stop') return typeof v.workspaceId === 'string' && typeof v.sessionId === 'string'
+  if (v.type === 'approval:answer')
+    return (
+      typeof v.workspaceId === 'string' &&
+      typeof v.sessionId === 'string' &&
+      typeof v.requestId === 'string' &&
+      (v.decision === 'once' || v.decision === 'session' || v.decision === 'deny') &&
+      (v.note === undefined || (typeof v.note === 'string' && v.note.length <= 500))
+    )
   if (v.type === 'scratchpad:op-result') return typeof v.opId === 'string'
   return false
 }
@@ -93,7 +115,12 @@ if (bindCheck.warning) console.warn(`[moi] ${bindCheck.warning}`)
 // connect and re-broadcast periodically (below) so a spinner whose terminal
 // status frame was lost self-heals without a reconnect.
 function statusSnapshot(): StatusSnapshotMessage {
-  return { type: 'status_snapshot', sessions: allHarnesses().flatMap(h => h.activeSessions()) }
+  const sessions = allHarnesses().flatMap(h => h.activeSessions())
+  for (const session of sessions) {
+    if (hasPendingApproval(session.workspaceId, session.sessionId))
+      session.activity = 'requires-action'
+  }
+  return { type: 'status_snapshot', sessions, approvals: pendingApprovalSnapshot() }
 }
 
 type Upgradable = { upgrade(req: Request, opts: { data: WsData }): boolean }
@@ -184,7 +211,13 @@ export const app = Bun.serve<WsData>({
           if (!workspace) return
           let run: Awaited<ReturnType<typeof resolveSessionRun>>
           try {
-            run = await resolveSessionRun(workspace, data.sessionId, data.agent, data.model)
+            run = await resolveSessionRun(
+              workspace,
+              data.sessionId,
+              data.agent,
+              data.model,
+              data.permissionMode
+            )
           } catch (error) {
             broadcast(data.workspaceId, {
               kind: 'error',
@@ -217,6 +250,8 @@ export const app = Bun.serve<WsData>({
               optimisticId: data.optimisticId,
               model: run.model,
               agentEnv: run.agentEnv,
+              agent: run.agent,
+              permissionMode: run.permissionMode,
               effort: data.effort,
               fastMode: data.fastMode,
               stream: data.stream,
@@ -237,9 +272,20 @@ export const app = Bun.serve<WsData>({
           const workspace = await getWorkspace(data.workspaceId)
           if (!workspace) return
           const agent = await sessionAgentFor(workspace, data.sessionId)
+          cancelSessionApprovals(data.workspaceId, data.sessionId)
           void harnessForSessionAgent(agent)
             .interrupt(data.workspaceId, data.sessionId)
             .catch(() => {})
+        }
+        if (data.type === 'approval:answer') {
+          answerApproval(
+            data.workspaceId,
+            data.sessionId,
+            data.requestId,
+            data.decision,
+            'authenticated browser',
+            data.note
+          )
         }
         // A tab's reply to a relayed Scratchpad op — settle the pending CLI
         // request (first reply wins; later/duplicate replies are ignored).

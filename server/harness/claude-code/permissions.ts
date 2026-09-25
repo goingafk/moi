@@ -3,6 +3,9 @@ import type {
   Options,
   SyncHookJSONOutput
 } from '@anthropic-ai/claude-agent-sdk'
+import type { PermissionMode, SessionAgent } from '@/lib/types'
+import { reviewTool } from '../../permissions/pending'
+import { toolRequest } from '../../permissions/normalize'
 
 export const CLAUDE_APPROVAL_REASON =
   'Approved by moi: agent sessions run with default-approve access until UI approvals land.'
@@ -32,3 +35,43 @@ export function claudeToolApproval(): SyncHookJSONOutput {
 export const CLAUDE_APPROVAL_HOOKS: Partial<Record<'PreToolUse', HookCallbackMatcher[]>> = {
   PreToolUse: [{ hooks: [async () => claudeToolApproval()] }]
 } satisfies Options['hooks']
+
+export function claudeApprovalHooks(context: {
+  workspaceId: string
+  sessionId: () => string
+  workspacePath: string
+  agent: SessionAgent
+  mode: PermissionMode
+}): Options['hooks'] {
+  if (context.mode === 'auto') return CLAUDE_APPROVAL_HOOKS
+  return {
+    PreToolUse: [
+      {
+        // A human decision has no application timeout. The SDK matcher accepts
+        // a long bound; Stop aborts the pending promise immediately.
+        timeout: 86_400,
+        hooks: [
+          async (input, _toolUseId, options) => {
+            if (input.hook_event_name !== 'PreToolUse') return { continue: true }
+            const result = await reviewTool(
+              context.workspaceId,
+              context.sessionId(),
+              context.mode,
+              toolRequest(context.agent, input.tool_name, input.tool_input, context.workspacePath),
+              options.signal
+            )
+            return {
+              continue: true,
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: result.decision === 'deny' ? 'deny' : 'allow',
+                permissionDecisionReason:
+                  result.decision === 'deny' ? result.note || 'Denied in moi' : 'Approved in moi'
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

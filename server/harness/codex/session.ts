@@ -12,7 +12,7 @@ import {
   renderMoiContextBody
 } from '@/lib/moi-context'
 import { type SubagentRecord, type Turn, applyEvent, emptyViewState } from '@/lib/format'
-import type { SessionActivity, StreamEvent, ViewState } from '@/lib/types'
+import type { PermissionMode, SessionActivity, StreamEvent, ViewState } from '@/lib/types'
 
 import {
   type CodexThread,
@@ -38,8 +38,11 @@ import {
   CODEX_LOCAL_CONTROL_CONTEXT,
   CODEX_LOCAL_CONTROL_FALLBACK,
   CODEX_THREAD_ACCESS,
-  CODEX_TURN_ACCESS
+  CODEX_TURN_ACCESS,
+  registerCodexApprovalContext,
+  removeCodexApprovalContext
 } from './permissions'
+import { cancelSessionApprovals, renameSessionApprovals } from '../../permissions/pending'
 import { generateCodexSessionTitle, renameCodexSessionIfUnchanged } from './session-title'
 import { agentStore } from '../../agent'
 import { debug } from '../../debug'
@@ -221,6 +224,8 @@ function waitingOnInput(status: CodexThread['status']): boolean {
 }
 
 function releaseSession(rec: SessionRecord, reason: string) {
+  cancelSessionApprovals(rec.workspaceId, rec.sessionId)
+  removeCodexApprovalContext(rec.workspacePath, rec.sessionId)
   flushCommandOutput(rec)
   clearPreviews(rec)
   settleTools(rec, reason)
@@ -905,6 +910,7 @@ type CodexSendInput = {
   effort?: string
   fastMode?: boolean
   stream?: boolean
+  permissionMode?: PermissionMode
   // Rendered through native additionalContext or the legacy text envelope.
   context?: MoiContext
 }
@@ -955,6 +961,7 @@ async function sendMessage(
         aliases.set(recKey(input.workspaceId, input.sessionId), realId)
         sendLanes.set(recKey(input.workspaceId, realId), lane)
         await renameSessionConfig(input.workspacePath, input.sessionId, realId)
+        renameSessionApprovals(input.workspaceId, input.sessionId, realId)
         await renameSelectedSession(input.workspacePath, input.sessionId, realId)
         // Builder tabs follow the same temporary-to-real session rename.
         await renameViewBuilderSession(
@@ -1006,6 +1013,12 @@ async function sendMessage(
   }
 
   if (lane.generation !== generation) return
+  registerCodexApprovalContext({
+    workspaceId: input.workspaceId,
+    sessionId: rec.sessionId,
+    workspacePath: input.workspacePath,
+    mode: input.permissionMode ?? 'auto'
+  })
   rec.lastTouched = Date.now()
   rec.stream = input.stream === true
   if (!rec.stream) clearPreviews(rec)
@@ -1142,6 +1155,7 @@ export async function interruptCodexRun(input: {
   workspaceId: string
   sessionId: string
 }): Promise<void> {
+  cancelSessionApprovals(input.workspaceId, input.sessionId)
   const lane = sendLane(input.workspaceId, input.sessionId)
   lane.generation++ // cancels queued sends, including a start still initializing
   const rec = sessions.get(liveKey(input.workspaceId, input.sessionId))

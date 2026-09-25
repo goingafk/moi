@@ -1,4 +1,4 @@
-import type { SessionAgent, SessionInfo, WorkspaceEntry } from '@/lib/types'
+import type { PermissionMode, SessionAgent, SessionInfo, WorkspaceEntry } from '@/lib/types'
 import { defaultSessionAgent, sameSessionAgent } from '@/lib/session-agent'
 
 import { getAppSettings } from './app-settings'
@@ -12,6 +12,7 @@ import {
   saveSessionConfig
 } from './session-config'
 import { installBundledSkills } from './skills-template'
+import { permissionModeFor } from './permissions/pending'
 
 export function harnessForSessionAgent(agent: SessionAgent): Harness {
   return harnessFor(agent.type === 'ollama' ? 'claude-code' : agent.type)
@@ -59,17 +60,29 @@ export async function resolveSessionRun(
   ws: WorkspaceEntry,
   sessionId: string,
   requestedAgent: SessionAgent | undefined,
-  requestedModel: string | undefined
-): Promise<{ harness: Harness; model: string | undefined; agentEnv?: Record<string, string> }> {
+  requestedModel: string | undefined,
+  requestedPermissionMode?: PermissionMode
+): Promise<{
+  harness: Harness
+  agent: SessionAgent
+  model: string | undefined
+  agentEnv?: Record<string, string>
+  permissionMode: PermissionMode
+}> {
   const existing = await getSessionConfig(ws.path, sessionId)
   if (existing.agent && requestedAgent && !sameSessionAgent(existing.agent, requestedAgent)) {
     throw new Error('A chat cannot change agents; start a new chat instead')
   }
   const agent = existing.agent ?? requestedAgent ?? defaultSessionAgent(ws.type)
+  const permissionMode =
+    existing.permissionMode ?? requestedPermissionMode ?? permissionModeFor(agent)
+  if (agent.type === 'codex' && permissionMode === 'ask-all')
+    throw new Error('Codex cannot ask before every tool call')
   const harness = harnessForSessionAgent(agent)
   if (agent.type !== 'ollama') {
     await bindSessionAgent(ws, sessionId, agent)
-    return { harness, model: requestedModel }
+    if (!existing.permissionMode) await saveSessionConfig(ws.path, sessionId, { permissionMode })
+    return { harness, agent, model: requestedModel, permissionMode }
   }
 
   const server = getAppSettings().ollamaServers.find(item => item.id === agent.serverId)
@@ -81,9 +94,12 @@ export async function resolveSessionRun(
     throw new Error('This Ollama model is unavailable or does not support tools')
   }
   await bindSessionAgent(ws, sessionId, agent)
+  if (!existing.permissionMode) await saveSessionConfig(ws.path, sessionId, { permissionMode })
   return {
     harness,
+    agent,
     model,
+    permissionMode,
     agentEnv: {
       ANTHROPIC_BASE_URL: server.baseUrl,
       ANTHROPIC_AUTH_TOKEN: 'ollama',

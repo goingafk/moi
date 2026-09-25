@@ -1,5 +1,17 @@
 # Claude Code (Agent SDK) — message spec & UI-abstraction notes
 
+## Phase 3 approval mechanism
+
+Verified against the installed `@anthropic-ai/claude-agent-sdk` types. A
+`PreToolUse` hook sees built-in and MCP tool calls and may return `allow` or
+`deny` after awaiting a browser decision. The fallback `canUseTool` callback
+uses the same reviewer for permission prompts outside that hook. `auto` keeps
+the previous unconditional allow hook. For Ollama-backed Claude Code sessions,
+the same hook applies with an `ask-risky` default. Stop aborts pending
+approvals. The SDK hook matcher has a finite `timeout` field; the current
+integration sets a one-day bound, so the plan's absolute “no timeout” target
+is not yet met. The UI itself does not expire an approval.
+
 The wire format the Claude Code harness emits and how it maps onto our
 display abstraction (`lib/format.ts`, implemented by `adapter.ts` here).
 Originally research for the message-display abstraction; kept as the reference

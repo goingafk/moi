@@ -24,6 +24,7 @@ import type { StagedAttachment } from '@/client/features/chat/composer/attachmen
 import { useUiStore } from '@/client/store/ui'
 
 import { ModelPicker } from './ModelPicker'
+import { PermissionPicker } from './PermissionPicker'
 
 export type ComposerAnnotationControls = {
   active: boolean
@@ -260,6 +261,7 @@ export function ChatComposer({
           )}
         </div>
         <ModelPicker sessionId={modelSessionId} workspaceOnly={Boolean(draft)} />
+        {!draft && <PermissionPicker sessionId={modelSessionId} />}
         {processing ? (
           <Tooltip>
             <TooltipTrigger

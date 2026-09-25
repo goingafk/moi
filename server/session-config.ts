@@ -1,7 +1,7 @@
 import { mkdir, rename } from 'node:fs/promises'
 import { join } from 'path'
 
-import type { SessionAgent, SessionConfig } from '@/lib/types'
+import type { PermissionMode, SessionAgent, SessionConfig } from '@/lib/types'
 import { isSessionAgent, sameSessionAgent } from '@/lib/session-agent'
 
 import { DATA_DIR } from './data-dir'
@@ -16,6 +16,7 @@ import { DATA_DIR } from './data-dir'
 // A patch may clear a field with `null` (vs `undefined`, which leaves it alone).
 export type SessionConfigPatch = {
   agent?: SessionAgent
+  permissionMode?: PermissionMode
   model?: string | null
   effort?: string | null
   fastMode?: boolean | null
@@ -35,6 +36,12 @@ export function setSessionConfigPath(path: string): void {
 function clean(cfg: SessionConfig | undefined): SessionConfig {
   const out: SessionConfig = {}
   if (isSessionAgent(cfg?.agent)) out.agent = cfg.agent
+  if (
+    cfg?.permissionMode === 'auto' ||
+    cfg?.permissionMode === 'ask-risky' ||
+    cfg?.permissionMode === 'ask-all'
+  )
+    out.permissionMode = cfg.permissionMode
   if (typeof cfg?.model === 'string') out.model = cfg.model
   if (typeof cfg?.effort === 'string') out.effort = cfg.effort
   if (typeof cfg?.fastMode === 'boolean') out.fastMode = cfg.fastMode
@@ -44,6 +51,7 @@ function clean(cfg: SessionConfig | undefined): SessionConfig {
 function isEmpty(cfg: SessionConfig): boolean {
   return (
     cfg.agent === undefined &&
+    cfg.permissionMode === undefined &&
     cfg.model === undefined &&
     cfg.effort === undefined &&
     cfg.fastMode === undefined
@@ -146,6 +154,7 @@ export async function saveSessionConfig(
       }
       next.agent = patch.agent
     }
+    if (patch.permissionMode) next.permissionMode = patch.permissionMode
     for (const key of ['model', 'effort'] as const) {
       const value = patch[key]
       if (value === undefined) continue

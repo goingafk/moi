@@ -30,6 +30,12 @@ type TransportOptions = {
   stop: () => void
   tap?: (direction: 'send' | 'recv', frame: Json) => void
   timeoutMs?: number
+  onServerRequest?: (
+    method: string,
+    params: Json
+  ) =>
+    | Promise<ReturnType<typeof codexServerRequestResponse>>
+    | ReturnType<typeof codexServerRequestResponse>
 }
 
 export function createCodexTransport(options: TransportOptions): CodexTransport {
@@ -124,7 +130,17 @@ export function createCodexTransport(options: TransportOptions): CodexTransport 
           : {}
       if ('id' in msg) {
         if (typeof msg.id !== 'string' && typeof msg.id !== 'number') return
-        send({ jsonrpc: '2.0', id: msg.id, ...codexServerRequestResponse(msg.method, params) })
+        void Promise.resolve(
+          options.onServerRequest?.(msg.method, params) ??
+            codexServerRequestResponse(msg.method, params)
+        ).then(
+          response => {
+            if (alive) send({ jsonrpc: '2.0', id: msg.id, ...response })
+          },
+          () => {
+            if (alive) send({ jsonrpc: '2.0', id: msg.id, result: { decision: 'decline' } })
+          }
+        )
       } else fanout(msg.method, params)
       return
     }

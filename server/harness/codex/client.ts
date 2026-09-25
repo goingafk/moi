@@ -19,6 +19,7 @@ import {
 import type { WorkspaceActivityPreview } from '../types'
 import { findHarnessExecutable, requireHarnessExecutable } from '../executable'
 import { createCodexTransport, type Json, type NotificationListener } from './transport'
+import { handleCodexServerRequest } from './permissions'
 import { readCodexPages } from './pagination'
 import { debug } from '../../debug'
 import { tapWire } from '../debug'
@@ -142,7 +143,8 @@ async function startClient(workspacePath: string): Promise<ClientRecord> {
     stop: () => {
       proc.kill()
     },
-    tap: (direction, frame) => tapWire(workspacePath, direction, frame)
+    tap: (direction, frame) => tapWire(workspacePath, direction, frame),
+    onServerRequest: (method, params) => handleCodexServerRequest(workspacePath, method, params)
   })
   transport.onNotification(method => {
     if (method === 'account/updated' || method === 'account/login/completed')

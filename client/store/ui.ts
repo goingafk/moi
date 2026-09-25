@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { StateStorage } from 'zustand/middleware'
+import type { PermissionMode } from '@/lib/types'
 
 // Per-browser UI preferences and onboarding markers, persisted to localStorage
 // so they survive reloads. Server-backed per-user app state belongs in DATA_DIR.
@@ -10,6 +11,7 @@ type UiStore = {
   workspaceIdsPendingAnalysis: string[]
   composerDrafts: Record<string, string>
   modelSelections: Record<string, string>
+  permissionSelections: Record<string, PermissionMode>
   viewBuilderDrafts: Record<string, string>
   dockedChatWidth: number
   setDiscoveredWorkspacesOpen: (open: boolean) => void
@@ -17,6 +19,7 @@ type UiStore = {
   markMessageSentFromMoi: (workspaceId: string) => void
   setComposerDraft: (workspaceId: string, value: string) => void
   setModelSelection: (workspaceId: string, value: string) => void
+  setPermissionSelection: (workspaceId: string, value: PermissionMode) => void
   setViewBuilderDraft: (builderId: string, value: string | null) => void
   setDockedChatWidth: (width: number) => void
 }
@@ -30,6 +33,7 @@ export const createUiStore = (storage?: StateStorage) =>
         workspaceIdsPendingAnalysis: [],
         composerDrafts: {},
         modelSelections: {},
+        permissionSelections: {},
         viewBuilderDrafts: {},
         dockedChatWidth: 360,
         setDiscoveredWorkspacesOpen: open => set({ discoveredWorkspacesOpen: open }),
@@ -58,6 +62,10 @@ export const createUiStore = (storage?: StateStorage) =>
           }),
         setModelSelection: (workspaceId, value) =>
           set(state => ({ modelSelections: { ...state.modelSelections, [workspaceId]: value } })),
+        setPermissionSelection: (workspaceId, value) =>
+          set(state => ({
+            permissionSelections: { ...(state.permissionSelections ?? {}), [workspaceId]: value }
+          })),
         // Unlike composer drafts, an empty string stays stored: the composer
         // falls back to the builder's server-saved requirements when no draft
         // exists, and deleting all text must not resurrect them. Pass null to

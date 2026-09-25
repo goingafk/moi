@@ -20,7 +20,8 @@ const API_UPDATABLE = [
   'autoUpdateSkills',
   'modelMode',
   'ollamaServers',
-  'localMcpServers'
+  'localMcpServers',
+  'permissions'
 ] as const satisfies readonly (keyof AppSettings)[]
 
 // Pick the API-updatable fields out of an untrusted body; unknown keys are
@@ -52,6 +53,64 @@ function store(): Conf<AppSettings> {
       autoUpdateSkills: { type: 'boolean', default: false },
       modelMode: { type: 'string', enum: ['manual', 'auto'], default: 'manual' },
       localMcpServers: { type: 'array', default: [], items: { type: 'string', minLength: 1 } },
+      permissions: {
+        type: 'object',
+        default: {
+          defaults: { claude: 'auto', codex: 'auto', ollama: 'ask-risky' },
+          rules: {
+            outsideProject: true,
+            deletes: true,
+            network: true,
+            gitDangerous: true,
+            system: true,
+            sensitiveFiles: true,
+            unparseableShell: true
+          },
+          alwaysAsk: [],
+          alwaysAllow: []
+        },
+        properties: {
+          defaults: {
+            type: 'object',
+            properties: Object.fromEntries(
+              ['claude', 'codex', 'ollama'].map(key => [
+                key,
+                { type: 'string', enum: ['auto', 'ask-risky', 'ask-all'] }
+              ])
+            ),
+            required: ['claude', 'codex', 'ollama'],
+            additionalProperties: false
+          },
+          rules: {
+            type: 'object',
+            properties: Object.fromEntries(
+              [
+                'outsideProject',
+                'deletes',
+                'network',
+                'gitDangerous',
+                'system',
+                'sensitiveFiles',
+                'unparseableShell'
+              ].map(key => [key, { type: 'boolean' }])
+            ),
+            required: [
+              'outsideProject',
+              'deletes',
+              'network',
+              'gitDangerous',
+              'system',
+              'sensitiveFiles',
+              'unparseableShell'
+            ],
+            additionalProperties: false
+          },
+          alwaysAsk: { type: 'array', items: { type: 'string', minLength: 1 } },
+          alwaysAllow: { type: 'array', items: { type: 'string', minLength: 1 } }
+        },
+        required: ['defaults', 'rules', 'alwaysAsk', 'alwaysAllow'],
+        additionalProperties: false
+      },
       ollamaServers: {
         type: 'array',
         default: [],
@@ -81,6 +140,9 @@ export function getAppSettings(): AppSettings {
 // and persists nothing.
 export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const settings = store()
+  if (patch.permissions?.defaults.codex === 'ask-all') {
+    throw new Error('Codex cannot ask before every tool call')
+  }
   if (patch.ollamaServers) {
     if (!Array.isArray(patch.ollamaServers)) throw new Error('Ollama servers must be a list')
     const ids = new Set<string>()

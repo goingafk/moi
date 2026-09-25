@@ -275,6 +275,7 @@ export type ClientMessage =
       model?: string
       // Agent choice for a new chat; existing sessions keep their stored binding.
       agent?: SessionAgent
+      permissionMode?: PermissionMode
       // Reasoning effort for this turn (one of the model's `supportedEffortLevels`).
       // Omitted means the SDK default. Unlike model, the SDK has no live setter,
       // so a change forces the live session to resume (see server/cc-session.ts).
@@ -294,6 +295,14 @@ export type ClientMessage =
       context?: MoiContext
     }
   | { type: 'stop'; workspaceId: string; sessionId: string }
+  | {
+      type: 'approval:answer'
+      workspaceId: string
+      sessionId: string
+      requestId: string
+      decision: 'once' | 'session' | 'deny'
+      note?: string
+    }
   // Reply to a relayed Scratchpad op (see ScratchpadOpMessage). Carries the
   // op's correlation id so the server settles the right pending CLI request.
   | { type: 'scratchpad:op-result'; opId: string; result?: ScratchOpResult; error?: string }
@@ -321,6 +330,7 @@ export type SessionInfo = {
 // corresponding workspace defaults.
 export type SessionConfig = {
   agent?: SessionAgent
+  permissionMode?: PermissionMode
   model?: string
   effort?: string
   fastMode?: boolean
@@ -329,6 +339,47 @@ export type SessionConfig = {
 export type SessionAgent =
   | { type: 'claude-code' | 'codex' | 'hermes' | 'openclaw' }
   | { type: 'ollama'; serverId: string }
+
+export type PermissionMode = 'auto' | 'ask-risky' | 'ask-all'
+export type PermissionRule =
+  | 'outsideProject'
+  | 'deletes'
+  | 'network'
+  | 'gitDangerous'
+  | 'system'
+  | 'sensitiveFiles'
+  | 'unparseableShell'
+export type PermissionDefaults = {
+  claude: PermissionMode
+  codex: PermissionMode
+  ollama: PermissionMode
+}
+export type PermissionSettings = {
+  defaults: PermissionDefaults
+  rules: Record<PermissionRule, boolean>
+  alwaysAsk: string[]
+  alwaysAllow: string[]
+}
+
+export type ApprovalRequest = {
+  id: string
+  workspaceId: string
+  sessionId: string
+  agent: SessionAgent
+  tool: string
+  command?: string
+  paths: string[]
+  reason: string
+  mode: PermissionMode
+  createdAt: number
+}
+export type ApprovalMessage = { type: 'approval:request'; request: ApprovalRequest }
+export type ApprovalResolvedMessage = {
+  type: 'approval:resolved'
+  requestId: string
+  workspaceId: string
+  sessionId: string
+}
 
 export type SelectedSessionState = {
   sessionId: string | null
@@ -345,6 +396,7 @@ export type AppSettings = {
   modelMode: 'manual' | 'auto'
   ollamaServers: OllamaServer[]
   localMcpServers: string[]
+  permissions: PermissionSettings
 }
 
 export type OllamaServer = {
@@ -412,6 +464,8 @@ export type ServerMessage =
   | StoppedFrame
   | StatusSnapshotMessage
   | ScratchpadOpMessage
+  | ApprovalMessage
+  | ApprovalResolvedMessage
 
 // A live token-by-token snapshot of an assistant message still being generated.
 // Ephemeral: it is NOT a StreamEvent, never persisted, and never folded into the
@@ -453,6 +507,8 @@ export type BroadcastFrame =
   | Omit<SessionsChangedMessage, 'workspaceId'>
   | Omit<ErrorFrame, 'workspaceId'>
   | Omit<StoppedFrame, 'workspaceId'>
+  | Omit<ApprovalResolvedMessage, 'workspaceId'>
+  | Omit<ApprovalMessage, 'workspaceId'>
 
 // Sent to a client right after it connects (and re-broadcast periodically): the
 // authoritative set of non-idle sessions across all workspaces. The client
@@ -462,6 +518,7 @@ export type BroadcastFrame =
 export type StatusSnapshotMessage = {
   type: 'status_snapshot'
   sessions: { workspaceId: string; sessionId: string; activity: SessionActivity }[]
+  approvals?: ApprovalRequest[]
 }
 
 export type WorkspaceSwitchMessage = {

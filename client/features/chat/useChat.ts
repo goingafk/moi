@@ -35,6 +35,7 @@ import {
   useLive
 } from '@/client/features/chat/chat-store'
 import { useUiStore } from '@/client/store/ui'
+import { useAppSettings } from '@/client/features/settings/api'
 import { toast } from '@/client/components/ui/toast'
 import { randomId } from '@/client/lib/random-id'
 import { emptyViewState } from '@/lib/format'
@@ -59,6 +60,8 @@ export function useChat(address: WorkspaceTabAddress) {
   const modelsData = useWorkspaceAgent(workspaceId).data
   const catalog = useModelCatalog(workspaceId).data ?? EMPTY_CATALOG
   const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
+  const draftPermissionMode = useUiStore(state => state.permissionSelections?.[workspaceId])
+  const permissionDefaults = useAppSettings().data?.permissions.defaults
   const sessions = useWorkspaceSessions(workspaceId).data
   const selectedSessionMissing =
     Boolean(selectedSession) &&
@@ -134,6 +137,16 @@ export function useChat(address: WorkspaceTabAddress) {
         selectedSessionId ? undefined : draftSelection,
         !selectedSessionId
       )
+      const selectedAgent = sessionConfig?.agent ?? selected?.agent
+      const permissionMode =
+        sessionConfig?.permissionMode ??
+        draftPermissionMode ??
+        (selectedAgent?.type === 'ollama'
+          ? permissionDefaults?.ollama
+          : selectedAgent?.type === 'codex'
+            ? permissionDefaults?.codex
+            : permissionDefaults?.claude) ??
+        'auto'
       let isNew = false
       if (!sid) {
         sid = randomId()
@@ -200,6 +213,7 @@ export function useChat(address: WorkspaceTabAddress) {
         optimisticId,
         model,
         agent: selectedSessionId && !sessionConfig?.agent ? undefined : selected?.agent,
+        permissionMode,
         effort,
         fastMode,
         stream,
@@ -222,6 +236,8 @@ export function useChat(address: WorkspaceTabAddress) {
       selectedSessionId,
       workspaceId,
       qc,
+      draftPermissionMode,
+      permissionDefaults,
       layout.selectedModel,
       layout.selectedEffort,
       layout.selectedFastMode,

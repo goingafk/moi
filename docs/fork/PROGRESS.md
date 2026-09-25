@@ -106,19 +106,28 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Added per-chat `auto`, `ask-risky`, and `ask-all` modes, saved with per-user session settings. Claude and Codex default to `auto`; Ollama-backed Claude defaults to `ask-risky`. The composer can change a chat's mode and settings expose defaults, risk switches, and custom ask/allow patterns.
+- Added a shared classifier for paths (including symlink escapes), shell commands, network, Git, system operations, sensitive files, and unknown tools. `alwaysAsk` wins over `alwaysAllow`, then built-in rules.
+- Claude's pre-tool hook and fallback permission callback now wait for browser decisions in ask modes. Codex app-server approval requests do the same; unknown threads are denied. Pending cards survive reconnect through the socket snapshot, and Stop denies outstanding approvals. Decisions are appended to a local audit file without raw command arguments.
+- Codex's `Ask all` is disabled: its app-server does not present every sandbox-allowed tool call for approval. See the harness notes for protocol details.
 
 ### Verification
 
-Not run.
+- `bun test`: 1,800 passed, 4 skipped, 0 failed with loopback socket permission. A sandboxed run failed 25 existing socket-dependent tests with `EPERM`; the permitted rerun passed.
+- `bun run typecheck`: passed. `bun run lint`: passed with the same 9 pre-existing React warnings. `bun run format:check`: passed. `bun run build:client`: passed.
+- Added classifier/path-escape, approval lifecycle/reconnect/interrupt/audit, and Codex native-approval tests. Verified Codex's wire shapes from the installed CLI's generated schema and Claude's hook types from the installed SDK.
 
 ### Decisions
 
-None yet.
+- The owner chose to disable `Ask all` for Codex, rather than change how Codex loads project settings. Server validation enforces the same constraint.
+- No per-workspace permission defaults: the selected mode belongs to the user's chat; project-shared settings would be the wrong owner.
+- Preserve Codex's existing `on-request` workspace sandbox in auto mode. Ask-risky only governs requests Codex actually emits.
 
 ### Open items
 
-All Phase 3 tasks in `PLAN.md`.
+- The Claude SDK hook timeout is set to one day, not literally infinite; its matcher has a finite timeout field. The UI has no expiry. A true unlimited wait would require an SDK-supported no-timeout mechanism.
+- Codex's native denial response cannot carry the optional note, so its agent sees a denial without the browser's note. Claude receives the note in its denial reason.
+- Live Ollama/Claude/Codex approval-card acceptance on the owner's LXC remains unverified; local tests use fakes. In particular, Codex `Ask risky` cannot intercept commands that its sandbox already allows.
 
 ## Phase 4 — Web terminal
 
