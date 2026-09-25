@@ -7,6 +7,7 @@ import {
 } from '@/client/features/chat/composer/attachments/draft-attachments'
 import { liveStore } from '@/client/features/chat/chat-store'
 import type { ComposerAnnotationControls } from '@/client/features/chat/composer/ChatComposer'
+import { randomId } from '@/client/lib/random-id'
 import { useLatestRef } from '@/client/lib/use-latest-ref'
 import type { LayoutMode, WorkspaceTabId } from '@/lib/types'
 
@@ -115,7 +116,7 @@ export function useChatAnnotation({
         sourceSessionId: sessionId,
         source: activeTab,
         origin,
-        attachmentId: crypto.randomUUID()
+        attachmentId: randomId()
       }
       draftRef.current = draft
       try {

@@ -40,6 +40,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - Audited internal HTTP use: `thumbnails.ts` and `preview.ts` are response handlers, not HTTP clients; applet fetches and both browser sockets use relative same-origin URLs; operational CLI paths use the control port. Server-side browser testing must use the Serve origin or a separate auth-off dev port.
 - Added the Tailscale service and Serve setup guide in `remote-setup.md`.
 - Owner-approved follow-up: added direct-tailnet device-IP mode for the first container deployment. It binds only the configured Tailscale IPv4 address, allow-lists client device IPs, rejects proxy headers and cross-site requests, and leaves Serve mode unchanged. Updated the setup guide to lead with this mode.
+- Deployment follow-up: direct HTTP is an insecure browser context, so `crypto.randomUUID()` was unavailable and the Send action failed before reaching either harness. Replaced browser-side UUID calls with a shared version-4 fallback using `crypto.getRandomValues()`, which is available on HTTP origins. Covered chat, attachments, annotations, and the harness debug page.
 
 ### Verification
 
@@ -49,6 +50,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - `bun run format:check`: passed across 678 files.
 - Verified current Tailscale Serve behavior against its official documentation and current source: it strips incoming identity headers, sets the login and header-info marker for user-owned tailnet requests, preserves the incoming Host, and overwrites the forwarded host/protocol/source headers.
 - Direct-tailnet follow-up: `bun test` passed with 1,778 pass, 4 skip, 0 fail; typecheck and format passed; lint exited 0 with the same 9 existing warnings. Unit tests cover accepted/rejected peers, Host/Origin/proxy checks and bind validation; process tests cover startup refusal for unsafe binds and an empty allow-list. The actual container-to-MacBook connection remains owner-only verification.
+- HTTP-browser follow-up: the owner confirmed `window.isSecureContext === false` and `typeof crypto.randomUUID === 'undefined'` at the direct Tailscale URL. The fallback has two focused tests (native and HTTP-like paths); the full suite passed with 1,780 pass, 4 skip, 0 fail when loopback socket access was permitted. Typecheck, lint (same 9 existing warnings), format, and the production client build passed. The first sandboxed full test attempt failed in 19 socket-binding tests with `EPERM` because the local sandbox disallowed loopback listeners; the unrestricted rerun passed.
 - Manual phone access over the real tailnet remains owner-only verification.
 
 ### Decisions
@@ -62,7 +64,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 ### Open items
 
 - Verify the final deployment from a phone over Tailscale HTTPS; this requires the owner's server and tailnet.
-- Verify the direct-tailnet deployment from the allowed MacBook; only the owner can run this on the container. HTTP over Tailscale may not satisfy browser secure-context requirements; use Serve-based HTTPS if those features are needed.
+- Verify chat sends from the allowed MacBook after redeploying the rebuilt client. Direct HTTP still lacks secure-context-only browser features other than the UUID calls now covered by a fallback; use Serve-based HTTPS if those features are needed.
 - Dev bundle source remains readable without auth by approved design; it exposes no workspace data.
 - A process already running as the moi OS user can forge the full Serve header set. This is not separately defended because the loopback-only control port intentionally gives that same local trust domain agent control and file access.
 - Cross-site top-level GET navigation remains allowed so links to moi work. The audited GET routes do not mutate state and the browser same-origin policy prevents the initiating site from reading their responses; cross-site WebSockets, preflights, fetches, and form posts are refused.

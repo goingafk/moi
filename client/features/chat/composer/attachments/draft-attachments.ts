@@ -10,6 +10,7 @@ import { findAttachment, liveStore } from '../../chat-store'
 import { uploadChatFile } from './uploads'
 import { reportAppletError } from '@/client/features/applets/applet-log'
 import { toast } from '@/client/components/ui/toast'
+import { randomId } from '@/client/lib/random-id'
 
 type ComposerTarget = {
   workspaceId: string
@@ -29,7 +30,7 @@ async function stageFile(
 ): Promise<void> {
   const file = typeof input === 'string' ? null : input
   const label = typeof input === 'string' ? input.split('/').at(-1)! : input.name || 'file'
-  const localId = crypto.randomUUID()
+  const localId = randomId()
   liveStore.getState().addAttachments(workspaceId, sessionId, [
     {
       kind: 'file',
@@ -163,6 +164,6 @@ export function stageTextAttachment(
 ): void {
   const store = liveStore.getState()
   store.addAttachments(workspaceId, sessionId, [
-    { kind: 'text', localId: crypto.randomUUID(), ...attachment }
+    { kind: 'text', localId: randomId(), ...attachment }
   ])
 }

@@ -16,6 +16,7 @@ import type { StagedAttachment } from '@/client/features/chat/composer/attachmen
 import { resolveSelectedModel } from '@/client/features/chat/composer/model-order'
 import type { MoiUserMessageOptions } from '@/client/features/workspace/moi-context'
 import { STREAM_RESPONSES } from '@/client/lib/flags'
+import { randomId } from '@/client/lib/random-id'
 import { formatChatTitle } from '@/lib/chat-title'
 import { applyEvent, emptyViewState } from '@/lib/format'
 import { messageAttachmentLimitError } from '@/lib/message-attachments'
@@ -142,7 +143,7 @@ export function startOptimisticTurn({
   sessionId,
   parts
 }: StartOptimisticTurnInput): string {
-  const optimisticId = `optimistic:${crypto.randomUUID()}`
+  const optimisticId = `optimistic:${randomId()}`
   queryClient.setQueryData<ViewState>(workspaceKeys.events(workspaceId, sessionId), current =>
     applyEvent(current ?? emptyViewState(), {
       kind: 'turn',

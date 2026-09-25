@@ -35,6 +35,7 @@ import {
 } from '@/client/features/chat/chat-store'
 import { useUiStore } from '@/client/store/ui'
 import { toast } from '@/client/components/ui/toast'
+import { randomId } from '@/client/lib/random-id'
 import { emptyViewState } from '@/lib/format'
 import { messageAttachmentLimitError } from '@/lib/message-attachments'
 import type { Part, ViewState } from '@/lib/types'
@@ -123,7 +124,7 @@ export function useChat(address: WorkspaceTabAddress) {
       let sid = selectedSessionId
       let isNew = false
       if (!sid) {
-        sid = crypto.randomUUID()
+        sid = randomId()
         isNew = true
         // An immediate applet send leaves the user's attachments staged in this chat.
         if (!ownsComposerAttachments(options)) {

@@ -2,7 +2,7 @@
 
 For a simple direct connection, moi can listen on the container's **Tailscale IPv4 address only**. Configure the MacBook's Tailscale IPv4 address as the sole allowed peer, then open `http://<container-tailnet-ip>:13337` on that MacBook. No Tailscale Serve, MagicDNS, certificate, or moi login is needed for this mode.
 
-This is device-IP access, not a user login: anyone controlling the allowed MacBook can operate moi and its agents. Traffic travels over Tailscale, but the browser URL is HTTP, so browser features that require a secure context may be unavailable. Never forward port 13337 from the router or bind moi to `0.0.0.0`.
+This is device-IP access, not a user login: anyone controlling the allowed MacBook can operate moi and its agents. Traffic travels over Tailscale, but the browser URL is HTTP, so browser features that require a secure context may be unavailable. moi's chat IDs use a `getRandomValues()` fallback so sending works on this HTTP origin; other secure-context-only browser features may still be unavailable. Never forward port 13337 from the router or bind moi to `0.0.0.0`.
 
 ## 1. Make sure Tailscale runs inside the container
 
@@ -36,6 +36,8 @@ bun link
 ```
 
 For an existing checkout, skip `git clone`, then fetch and switch. If the local branch already exists, use `git switch fork/phase-1-security` followed by `git pull --ff-only` instead of `git switch --track`. After later pulls, rerun `bun run build:client`. Install and log in to the agent CLI you plan to use as the same OS user that runs moi.
+
+After a client-only update on an existing checkout, rebuild as that checkout's owner and restart the service. A browser refresh is also required to load the new bundle. For a system-level unit named `moi.service` instead of the user unit below, use `systemctl restart moi` as root.
 
 ## 3. Configure direct-tailnet access
 

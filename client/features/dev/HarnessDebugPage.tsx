@@ -5,6 +5,7 @@ import { useSearchParams } from 'wouter'
 
 import { Button } from '@/client/components/ui/button'
 import { cn } from '@/client/lib/cn'
+import { randomId } from '@/client/lib/random-id'
 import { useLatestRef } from '@/client/lib/use-latest-ref'
 import { wsUrl } from '@/client/lib/ws-url'
 import type { Model, WorkspaceAgent, WorkspaceEntry } from '@/lib/types'
@@ -184,7 +185,7 @@ export function HarnessDebugPage() {
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
   const [stream, setStream] = useState(true)
-  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID())
+  const [sessionId, setSessionId] = useState<string>(() => randomId())
   const [isNew, setIsNew] = useState(true)
   const [prompt, setPrompt] = useState('')
   const [proc, setProc] = useState<ProcessInfo | null>(null)
@@ -246,7 +247,7 @@ export function HarnessDebugPage() {
   // meaningless there (a codex resume of a Claude session id just errors),
   // so start a fresh thread.
   useEffect(() => {
-    setSessionId(crypto.randomUUID())
+    setSessionId(randomId())
     setIsNew(true)
     setEvents(null)
   }, [workspaceId])
@@ -307,7 +308,7 @@ export function HarnessDebugPage() {
           sessionId: sessionRef.current,
           isNew,
           content,
-          optimisticId: crypto.randomUUID(),
+          optimisticId: randomId(),
           ...(model ? { model } : {}),
           ...(effort ? { effort } : {}),
           stream
@@ -325,7 +326,7 @@ export function HarnessDebugPage() {
   }, [sessionRef, workspaceId])
 
   const newThread = useCallback(() => {
-    setSessionId(crypto.randomUUID())
+    setSessionId(randomId())
     setIsNew(true)
     setEvents(null)
     setEventsLoadedAt(0)
