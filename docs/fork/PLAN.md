@@ -39,7 +39,7 @@ Treat these as facts about the starting point. If you find any of them wrong, sa
 - **Security:** the HTTP server binds `127.0.0.1` by default (`server/web.ts`, overridable with `HOST`); the control port's host is fixed to `127.0.0.1` (`CONTROL_HOST` in `server/constants.ts`), but its port is overridable with `MOI_CONTROL_PORT` (default 13059). **There is no authentication of any kind** — on the HTTP port or the control port, so any local process can use the control port. Anyone who can reach port 13337 can drive an agent that runs shell commands. Agents also auto-approve everything: Claude Code via a `PreToolUse` allow hook (`server/harness/claude-code/permissions.ts`), Codex by accepting every supported permission request (workspace-write sandbox, network off).
 - **Scratchpad:** built on tldraw (touch-capable).
 - **No terminal, no PWA manifest, no service worker.** About 15 client files have some responsive classes; the app is desktop-first.
-- **Self-update:** _(Corrected in Phase 0.)_ `server/update.ts` checks the npm registry for `moi-computer` (upstream's package) in the background (`GET /api/update`) and installs it only on an explicit action (the in-app update button → `POST /api/update`, or `moi update`). Source checkouts (git or no `dist/`) were already excluded; a global install (e.g. from `bun pm pack`) was not. Phase 0 gated all three entry points behind a deployment flag, `selfUpdate` in `config.json` / `MOI_SELF_UPDATE`, default off. `server/skill-update.ts` has no remote source: it copies the skills bundled with the running install into a workspace (`autoUpdateSkills` just runs that automatically), so it follows whatever install is running. `registry.json`'s `molefrog/moi/*` dependencies are resolved from the local bundle, not GitHub. `release.yml` publishes to npm as `moi-computer`, which would collide with upstream if it ever ran from this fork.
+- **Self-update:** _(Corrected in Phase 0.)_ `server/update.ts` checks the npm registry for `moi-computer` (upstream's package) in the background (`GET /api/update`) and installs it only on an explicit action (the in-app update button → `POST /api/update`, or `moi update`). Source checkouts (git or no `dist/`) were already excluded; a global install (e.g. from `bun pm pack`) was not. Phase 0 gated all three entry points behind a deployment flag, `selfUpdate` in `config.json` / `MOI_SELF_UPDATE`, default off. `server/skill-update.ts` has no remote source: it copies the skills bundled with the running install into a workspace (`autoUpdateSkills` just runs that automatically), so it follows whatever install is running. `registry.json`'s `molefrog/moi/*` dependencies are resolved from the local bundle, not GitHub. `release.yml` publishes to npm as `moi-computer`, which would collide with upstream; after Phase 0 it is manual-dispatch only (no tag trigger). This fork installs from source with `bun link`.
 - **License:** Elastic License 2.0. Personal use and modification are fine. Keep `LICENSE` and notices intact. It restricts offering the software to third parties as a hosted/managed service — relevant only if this ever becomes a product.
 
 ---
@@ -134,12 +134,42 @@ Tasks:
    - local models degrade badly when given hundreds of tool definitions — local sessions should use a lean MCP config (strict/allow-listed servers only), configurable in settings.
      Verify both against the installed Claude Code version rather than assuming.
 6. **Unified picker:** merge Claude models, Codex models and each Ollama server's models into one list using `Model.group` headings ("Claude", "Codex", "Ollama — homelab", …). Each entry carries which agent runs it; picking an entry sets the session's agent + model. Grey out non-tool-capable Ollama models with a short explanation. Show the ready/cold dot for Ollama.
-7. **Mode switch (manual only for now):** add the global setting `modelMode: "auto" | "manual"` (default `"manual"` until Phase 6 lands) and the per-session toggle in the composer. In this phase, Auto is visible but disabled with a "coming soon" state, or hidden — your call, but keep the setting shape final.
+7. **Mode switch (manual only for now):** add the global setting `modelMode: "auto" | "manual"` (default `"manual"` until Phase 7 lands) and the per-session toggle in the composer. In this phase, Auto is visible but disabled with a "coming soon" state, or hidden — your call, but keep the setting shape final.
 8. Tests: harness dispatch per session; picker merge and grouping; Ollama discovery with a fake server; env overrides applied only to local sessions.
 
 Done when: in one workspace I can run a Claude session, a Codex session and a Qwen-on-Ollama session side by side, each using its own tools and skills, chosen from one grouped picker.
 
-### Phase 3 — Web terminal
+### Phase 3 — Permission modes
+
+Goal: per session, I decide what an agent may do without asking, and approvals show up in the chat (and later on my phone).
+
+Today every agent auto-approves everything (section 2, Security). That is acceptable for Claude and Codex, which I watch, but not for local models, which make more mistakes.
+
+Tasks:
+
+1. **Setting shape:** per-session `permissionMode: "auto" | "ask-risky" | "ask-all"`. `auto` is today's behaviour. Store it with the Phase 2 per-session agent binding (per-user state in the data dir). Global defaults per agent kind in app settings: Claude Code and Codex default to `auto`; Ollama/local sessions default to `ask-risky`. Toggle in the composer next to the model picker.
+2. **Risk classifier:** a pure, harness-agnostic function (e.g. `server/permissions/classify.ts`) taking a normalised tool request (agent, tool name, shell command, target paths, cwd, workspace root) and returning `safe` or `risky` with a short reason. Built-in "risky" rules, each individually switchable:
+   - **outside the project:** a shell command whose cwd, or any path argument, resolves (after `realpath`) outside the workspace root; any file write/edit outside it;
+   - **deletes:** `rm`, `rmdir`, `unlink`, `git rm`, `find … -delete`, file-delete tools, and moves that overwrite;
+   - **network:** `curl`, `wget`, `ssh`, `scp`, `rsync` to a remote, `nc`, package installs (`bun/npm/pnpm/yarn add|install`, `pip install`, `brew install`, `cargo install`), web fetch/search tools, and Codex network-permission requests;
+   - **git that publishes or discards work:** `push`, any `--force`, `reset --hard`, `clean -f`, `checkout --`/`restore` of tracked files, `branch -D`, `rebase`, `commit --amend`, `stash drop|clear`;
+   - **privilege and system:** `sudo`, `su`, `chmod`/`chown` outside the project, `kill`/`pkill`, `launchctl`, `systemctl`, `crontab`;
+   - **sensitive files:** `.env*`, `~/.ssh`, `~/.claude`, `~/.codex`, shell rc files, the moi data dir;
+   - **unparseable shell:** command substitution, `eval`, piping into `sh`/`bash`, or anything the parser can't classify → risky (fail closed). Use the existing `shell-quote` dependency for parsing.
+3. **Configurable:** app settings hold `alwaysAsk` and `alwaysAllow` lists (command prefixes, tool names, path globs) plus the per-rule switches. `alwaysAsk` beats `alwaysAllow`; both beat built-in rules. Per-workspace overrides only if clearly needed (decide ownership first).
+4. **Harness wiring:** verify each mechanism against the installed versions before coding and record it in the harness `NOTES.md`.
+   - Claude Code: the `PreToolUse` hook (`claude-code/permissions.ts`) returns `allow` in `auto`, and defers to the `canUseTool` callback (or returns `ask`/`deny`) otherwise; `canUseTool` waits for the UI decision.
+   - Codex: `permissions.ts` stops auto-accepting in ask modes; approval server requests are forwarded to the UI and answered with the user's decision. Choose `approvalPolicy` per mode.
+   - A session waiting on a decision reports `requires-action`.
+5. **Protocol and UI:** new socket messages for an approval request and response in `lib/types.ts`; pending requests are included in the status snapshot so they survive reconnects. Chat approval card: tool, command, paths, why it's risky; actions "Allow once", "Allow for this session", "Deny" (with an optional note to the agent). No timeout; interrupting the session cancels pending requests.
+6. **Audit log:** every decision (request, classification, mode, answer, who) appended to a local file in the data dir.
+7. Tests: classifier table tests (including path escapes via `..` and symlinks); per-harness wiring with fakes; reconnect with a pending approval; `auto` mode unchanged.
+
+Phase 8 (mobile) push notifications depend on this phase.
+
+Done when: a local session asks before `git push`, `rm -rf` or `curl`; a Claude session in `auto` behaves exactly as today; and I can approve or deny from the chat.
+
+### Phase 4 — Web terminal
 
 Goal: a terminal tab in the UI for installing CLIs and logging in to Claude Code, Codex, etc., on the server.
 
@@ -154,13 +184,13 @@ Tasks:
 
 Done when: from my phone I can open a terminal, run `claude` or `codex` login flows, disconnect, reconnect and find the same session.
 
-### Phase 4 — Usage tracking
+### Phase 5 — Usage tracking
 
 Goal: one view showing how much usage is left per provider and when it resets.
 
 Tasks:
 
-1. **Claude:** stop discarding `rate_limit_event`. Normalise `rate_limit_info` into a shared `UsageSnapshot` type (provider, window type, status, utilisation if present, resets at, observed at). Inspect real events and document the actual fields in `server/harness/claude-code/NOTES.md` — expect a coarse signal (status + reset time), not always a percentage.
+1. **Claude:** `rate_limit_event` already reaches the client as a `rate-limit` notice (dropped at render time in `client/features/chat/messages/interleave-notices.ts`), so this is server-side work: retain the latest value per account and normalise it. Normalise `rate_limit_info` into a shared `UsageSnapshot` type (provider, window type, status, utilisation if present, resets at, observed at). Inspect real events and document the actual fields in `server/harness/claude-code/NOTES.md` — expect a coarse signal (status + reset time), not always a percentage.
 2. **Codex:** read rate-limit windows from the Codex app server (verify method/notification names against the Codex version in use and document them in `server/harness/codex/NOTES.md`). Normalise into `UsageSnapshot`.
 3. **Ollama:** report per-server availability and loaded models (no quota).
 4. **Jev:** track spend locally from token counts × published price; show alongside the TypeSafe balance if an API for it exists (check; if not, just local spend).
@@ -170,7 +200,7 @@ Tasks:
 
 Done when: I can see at a glance how much Claude and Codex usage I have left and when each resets.
 
-### Phase 5 — Memory service (separate repo) and moi integration
+### Phase 6 — Memory service (separate repo) and moi integration
 
 Goal: one memory shared by every agent on every machine.
 
@@ -213,7 +243,7 @@ moi integration (this repo):
 
 Done when: a fact saved by a Codex session shows up in a Claude session in the same project (and from another machine), and low-relevance facts disappear over time unless pinned.
 
-### Phase 6 — Router and Auto routed mode
+### Phase 7 — Router and Auto routed mode
 
 Goal: in Auto mode, every request goes through Jev or Laya and lands on a sensible model.
 
@@ -222,7 +252,7 @@ Tasks:
 1. **Task classification (model's job):** Jev/Laya answers two `Choice` questions from the user's message plus a short project summary: difficulty (`trivial` | `medium` | `hard`) and kind (`ui-scaffold` | `refactor` | `debug` | `tests` | `docs` | `other`).
 2. **Model selection (code's job):**
    - eligibility table: which catalog entries are allowed per difficulty (configurable; e.g. trivial → local or cheapest, hard → strongest Claude/Codex models);
-   - among eligible, rank by headroom from Phase 4, preferring **usage that is unused and about to reset** (use-it-or-lose-it), then local models as the free default for trivial work;
+   - among eligible, rank by headroom from Phase 5, preferring **usage that is unused and about to reset** (use-it-or-lose-it), then local models as the free default for trivial work;
    - skip anything unavailable (rate-limited, server down, model cold if a warm alternative exists).
 3. **Transparency:** each Auto-routed message shows the chosen model and a one-line reason ("Codex — refactor; OpenAI usage resets in 40 min"). One click to override for the rest of the session (switches that session to manual with the chosen model).
 4. **Fallbacks:** Jev fails → Laya; both fail → last-used model, with a visible notice. Never fail the user's message because routing failed.
@@ -232,25 +262,25 @@ Tasks:
 
 Done when: Auto mode routes trivial tasks to local models, uses expiring subscription usage first, reserves scarce Claude usage for hard tasks, and always explains itself.
 
-### Phase 7 — Mobile
+### Phase 8 — Mobile
 
 Goal: installable, usable phone experience for supervising agents.
 
 Tasks:
 
 1. PWA: web app manifest, icons, service worker (app shell caching only — never cache API responses with private data), full-screen standalone display.
-2. Push notifications (Web Push with VAPID keys stored as secrets) when a session enters `requires-action` and when a task finishes. Settings to toggle each. Verify iOS behaviour (home-screen web apps only).
+2. Push notifications (Web Push with VAPID keys stored as secrets) when a session enters `requires-action` and when a task finishes. Depends on Phase 3: until permission modes exist, agents auto-approve everything, so `requires-action` almost never happens and there is little to notify about. Settings to toggle each. Verify iOS behaviour (home-screen web apps only).
 3. Phone layout: chat-first; session list as a drawer; large approve/reject controls for `requires-action`; readable diff view; usage indicator. Follow `DESIGN.md`.
 4. Voice input for the composer (browser speech recognition where available).
 5. Reconnect behaviour: confirm the status snapshot resync works over flaky mobile connections; add a visible "reconnecting" state.
 
 Done when: moi is installed on my phone's home screen, buzzes when an agent needs me, and I can approve and review from the phone comfortably.
 
-### Phase 8 — Later (do not start without asking)
+### Phase 9 — Later (do not start without asking)
 
 - Multiple servers as environments: register servers, choose one per project, show which server each session runs on.
 - Per-project containers for isolation and reproducible toolchains (Flutter, Godot, Node, …).
-- Cross-provider cost dashboard (per session and per day) using the usage data from Phase 4.
+- Cross-provider cost dashboard (per session and per day) using the usage data from Phase 5.
 - Connector skills with `requiredEnv` templates for GitHub and Linear.
 - Homelab widget pulling Prometheus/Grafana data.
 - Jev vs Laya side-by-side comparison mode for scoring and routing, with logged disagreements, to decide whether Laya can replace paid Jev calls.

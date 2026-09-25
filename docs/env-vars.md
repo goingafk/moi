@@ -125,7 +125,7 @@ lifetime:
   inherit toggle), the worker is spawned from a neutral cwd and `chdir`s back
   to the workspace root at startup (`MEI_WORKSPACE_ROOT`, see
   `server/functions-worker.ts`). moi's injected env is therefore authoritative.
-- **Agent session** (`server/cc-session.ts`): spawns with the resolved env
+- **Agent session** (`server/harness/claude-code/session.ts`): spawns with the resolved env
   merged into the SDK `query()` `env`.
 
 ### Applying changes (no mid-turn reload)
@@ -170,7 +170,7 @@ the respawns above.
 | `server/cli-env.ts`                           | `moi env` rendering, secret input, exec spawn, control-port notify        |
 | `server/required-env.ts`                      | widget + view `requiredEnv` aggregation                                   |
 | `server/functions.ts` / `functions-worker.ts` | widget worker spawn + env injection + neutral-cwd/chdir + `restartWorker` |
-| `server/cc-session.ts`                        | agent session env injection + `restartWorkspaceSessions`                  |
+| `server/harness/claude-code/session.ts`       | agent session env injection + `restartWorkspaceSessions`                  |
 | `server/control.ts`                           | `env:changed` handler (reap + `env:updated` broadcast)                    |
 | `server/api.ts`                               | `GET`/`PUT /api/workspaces/:id/env`                                       |
 | `lib/types.ts`                                | `WorkspaceEnvVar`, `WorkspaceEnvView`                                     |
