@@ -20,8 +20,39 @@ test('defaults apply when no config file exists', () => {
     cloudDemo: false,
     experiments: [],
     demoInstallUrl: 'https://moi.computer',
-    selfUpdate: false
+    selfUpdate: false,
+    auth: null,
+    allowedUsers: []
   })
+})
+
+test('auth and allowed users come from the config file, env wins', async () => {
+  const file = await configFile(JSON.stringify({ auth: 'off', allowedUsers: ['a@example.com'] }))
+  expect(loadAppConfig(file, NO_ENV)).toMatchObject({
+    auth: 'off',
+    allowedUsers: ['a@example.com']
+  })
+  expect(
+    loadAppConfig(file, {
+      MOI_AUTH: 'Tailscale',
+      MOI_ALLOWED_USERS: 'b@example.com, c@example.com'
+    })
+  ).toMatchObject({ auth: 'tailscale', allowedUsers: ['b@example.com', 'c@example.com'] })
+})
+
+test('an unknown auth value is ignored rather than turning auth off', async () => {
+  const errors: string[] = []
+  const spy = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    errors.push(args.map(String).join(' '))
+  })
+  try {
+    const file = await configFile(JSON.stringify({ auth: 'none' }))
+    expect(loadAppConfig(file, NO_ENV).auth).toBeNull()
+    expect(loadAppConfig('/nonexistent', { MOI_AUTH: 'disabled' }).auth).toBeNull()
+    expect(errors.join('\n')).toContain('auth')
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 test('self-update is opt-in from the config file or MOI_SELF_UPDATE', async () => {

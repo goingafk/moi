@@ -26,13 +26,24 @@ export type AppConfig = {
   // default in this fork: the published `moi-computer` package is upstream, and
   // installing it would replace the fork.
   selfUpdate: boolean
+  // HTTP/WebSocket auth (`server/auth.ts`). 'tailscale' trusts Tailscale Serve
+  // identity headers on loopback requests; 'off' accepts only direct loopback
+  // requests. null (unset) resolves to 'off' under the dev supervisor and
+  // 'tailscale' everywhere else.
+  auth: AuthSetting | null
+  // Tailscale logins allowed in 'tailscale' mode (case-insensitive).
+  allowedUsers: string[]
 }
+
+export type AuthSetting = 'tailscale' | 'off'
 
 const DEFAULTS: AppConfig = {
   cloudDemo: false,
   experiments: [],
   demoInstallUrl: 'https://moi.computer',
-  selfUpdate: false
+  selfUpdate: false,
+  auth: null,
+  allowedUsers: []
 }
 
 export const APP_CONFIG_FILE = join(DATA_DIR, 'config.json')
@@ -64,6 +75,18 @@ function parseList(raw: string | undefined): string[] | undefined {
 function parseString(raw: string | undefined): string | undefined {
   if (raw === undefined || raw.trim() === '') return undefined
   return raw.trim()
+}
+
+function parseAuth(raw: string | undefined): AuthSetting | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined
+  const value = raw.trim().toLowerCase()
+  if (value === 'tailscale' || value === 'off') return value
+  warn(`ignoring MOI_AUTH=${raw} — expected "tailscale" or "off"`)
+  return undefined
+}
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
 }
 
 function fileValues(file: string): Partial<AppConfig> {
@@ -99,7 +122,7 @@ function fileValues(file: string): Partial<AppConfig> {
     else warn('ignoring "cloudDemo" — expected a boolean')
   }
   if (raw.experiments !== undefined) {
-    if (Array.isArray(raw.experiments) && raw.experiments.every(item => typeof item === 'string')) {
+    if (isStringList(raw.experiments)) {
       out.experiments = raw.experiments
     } else warn('ignoring "experiments" — expected an array of strings')
   }
@@ -110,6 +133,14 @@ function fileValues(file: string): Partial<AppConfig> {
   if (raw.selfUpdate !== undefined) {
     if (typeof raw.selfUpdate === 'boolean') out.selfUpdate = raw.selfUpdate
     else warn('ignoring "selfUpdate" — expected a boolean')
+  }
+  if (raw.auth !== undefined) {
+    if (raw.auth === 'tailscale' || raw.auth === 'off') out.auth = raw.auth
+    else warn('ignoring "auth" — expected "tailscale" or "off"')
+  }
+  if (raw.allowedUsers !== undefined) {
+    if (isStringList(raw.allowedUsers)) out.allowedUsers = raw.allowedUsers
+    else warn('ignoring "allowedUsers" — expected an array of strings')
   }
   return out
 }
@@ -124,7 +155,9 @@ export function loadAppConfig(
     cloudDemo: parseBool(env.MOI_CLOUD_DEMO),
     experiments: parseList(env.MOI_EXPERIMENTS),
     demoInstallUrl: parseString(env.MOI_DEMO_INSTALL_URL),
-    selfUpdate: parseBool(env.MOI_SELF_UPDATE)
+    selfUpdate: parseBool(env.MOI_SELF_UPDATE),
+    auth: parseAuth(env.MOI_AUTH),
+    allowedUsers: parseList(env.MOI_ALLOWED_USERS)
   }
   const merged = { ...DEFAULTS, ...fromFile }
   for (const key of Object.keys(fromEnv) as (keyof AppConfig)[]) {
