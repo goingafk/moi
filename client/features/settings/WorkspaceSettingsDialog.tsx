@@ -5,7 +5,8 @@ import {
   IconPlugConnected,
   IconSettings,
   IconCpu,
-  IconShieldLock
+  IconShieldLock,
+  IconChartBar
 } from '@tabler/icons-react'
 
 import { Button } from '@/client/components/ui/button'
@@ -16,14 +17,16 @@ import { EnvironmentSettings } from './EnvironmentSettings'
 import { GeneralSettings } from './GeneralSettings'
 import { ModelsSettings } from './ModelsSettings'
 import { PermissionsSettings } from './PermissionsSettings'
+import { UsageSettings } from './UsageSettings'
 
 export { DialogTrigger as WorkspaceSettingsDialogTrigger } from '@/client/components/ui/dialog'
 
-type SettingsNav = 'general' | 'models' | 'permissions' | 'connectors' | 'environment'
+type SettingsNav = 'general' | 'models' | 'usage' | 'permissions' | 'connectors' | 'environment'
 
 const NAV: { id: SettingsNav; label: string; icon: typeof IconSettings }[] = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'models', label: 'Models', icon: IconCpu },
+  { id: 'usage', label: 'Usage', icon: IconChartBar },
   { id: 'permissions', label: 'Permissions', icon: IconShieldLock },
   { id: 'connectors', label: 'Connectors', icon: IconPlugConnected },
   { id: 'environment', label: 'Environment', icon: IconKey }
@@ -66,6 +69,7 @@ export function WorkspaceSettingsDialog({ children }: WorkspaceSettingsDialogPro
           <div className="px-8 py-7">
             {page === 'general' && <GeneralSettings />}
             {page === 'models' && <ModelsSettings />}
+            {page === 'usage' && <UsageSettings />}
             {page === 'permissions' && <PermissionsSettings />}
             {page === 'connectors' && <ConnectorsSettings />}
             {page === 'environment' && <EnvironmentSettings />}

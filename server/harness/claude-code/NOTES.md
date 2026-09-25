@@ -1,5 +1,22 @@
 # Claude Code (Agent SDK) — message spec & UI-abstraction notes
 
+## Phase 5 usage events
+
+The installed `@anthropic-ai/claude-agent-sdk` declares `rate_limit_event`
+with `rate_limit_info.status` (`allowed`, `allowed_warning`, or `rejected`),
+optional `rateLimitType`, `utilization`, and numeric `resetsAt`. The supported
+window ids are `five_hour`, `seven_day`, model-scoped weekly windows, and
+overage windows. moi stores one latest snapshot per window. It accepts reset
+epochs in either seconds or milliseconds because the SDK type does not specify
+the unit, and accepts utilization as either a 0..1 ratio or 0..100 percentage.
+
+No `rate_limit_event` existed in the local Claude session archive during Phase
+5, so the committed Claude fixture is based on the installed SDK declaration,
+not claimed as captured traffic. The event contains no account id; Claude
+snapshots therefore represent the account used by the running CLI, rather than
+an independently identifiable multi-account row. Ollama-backed Claude sessions
+are excluded from this path.
+
 ## Phase 3 approval mechanism
 
 Verified against the installed `@anthropic-ai/claude-agent-sdk` types. A

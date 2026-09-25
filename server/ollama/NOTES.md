@@ -1,5 +1,10 @@
 # Ollama discovery and Claude Code integration
 
+Phase 5 reuses the same discovery calls for usage status: `/api/tags` supplies
+the installed count and `/api/ps` the loaded count. Ollama rows are explicitly
+availability rows, not quota rows; a failed discovery marks that configured
+server unavailable without inventing a usage percentage.
+
 Verified against Ollama's current [list models](https://docs.ollama.com/api/tags), [show model details](https://docs.ollama.com/api-reference/show-model-details), and [running models](https://docs.ollama.com/api/ps) references on 2026-09-25. `GET /api/tags` returns `models[]` with `name`/`model`; `GET /api/ps` returns the loaded subset in the same shape; `POST /api/show` accepts `{ "model": "..." }` and returns `capabilities[]`. Tool-capable models advertise `"tools"`. The discovery code calls `/api/show` per model rather than trusting `/api/tags` capabilities, which may be absent or incomplete. A failed detail request leaves the model visible but not selectable for agentic use.
 
 Ollama's [Claude Code integration](https://docs.ollama.com/integrations/claude-code) specifies `ANTHROPIC_AUTH_TOKEN=ollama`, `ANTHROPIC_API_KEY=""`, `ANTHROPIC_BASE_URL=<server origin>`, and `claude --model <Ollama model>`. The integration supports tool calls with compatible models. A live Claude CLI / Ollama run is still needed to validate the complete moi harness path on the owner's server.

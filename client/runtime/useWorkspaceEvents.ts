@@ -7,6 +7,7 @@ import type {
   AgentLoginState,
   AppSettings,
   HarnessAvailability,
+  UsageSnapshot,
   ViewBuilder,
   ViewInfo,
   WidgetInfo
@@ -46,6 +47,7 @@ export type WorkspaceEvent =
   // App settings changed (PATCH /api/settings from any client) — carries the
   // new value so caches update without a refetch.
   | { type: 'settings:updated'; settings: AppSettings }
+  | { type: 'usage:updated'; snapshots: UsageSnapshot[] }
   | NavigationRequest
 
 type WorkspaceEventHandler = (event: WorkspaceEvent) => void

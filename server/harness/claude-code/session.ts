@@ -44,6 +44,7 @@ import {
 import { toolRequest } from '../../permissions/normalize'
 import { requireHarnessExecutable } from '../executable'
 import type { SendMessageInput } from '../types'
+import { recordClaudeUsage } from '../../usage'
 
 // Media types Claude vision accepts; uploads.ts guarantees every image upload is
 // normalized to one of these, so the cast on `media_type` below is sound.
@@ -432,6 +433,11 @@ async function consume(s: LiveSession) {
     for await (const msg of s.q) {
       if (s.closed) break
       tapWire(s.workspaceId, 'recv', msg)
+      if (msg.type === 'rate_limit_event' && s.workspaceEnv.ANTHROPIC_AUTH_TOKEN !== 'ollama') {
+        void recordClaudeUsage(msg.rate_limit_info).catch(error =>
+          debug(`could not save Claude usage: ${error instanceof Error ? error.message : error}`)
+        )
+      }
       if (msg.type === 'system' && msg.subtype === 'init') {
         s.messages.isNew = false
         const realId = msg.session_id

@@ -78,6 +78,7 @@ import { getWorkspaceSkillsStatus, updateWorkspaceSkills } from './skill-update'
 import { serveWorkspaceImagePreview } from './preview'
 import { MAX_UPLOAD_BYTES, addUpload, addWorkspaceFileUpload, getUpload } from './uploads'
 import { requiredEnvFor } from './required-env'
+import { usageOverview } from './usage'
 import {
   deleteView,
   getViewList,
@@ -1281,6 +1282,11 @@ api.post('/api/update', async c => {
 // App-wide settings (settings.json in the data dir). GET returns every key
 // with defaults applied; PATCH merges a partial body and returns the result.
 api.get('/api/settings', c => c.json(getAppSettings()))
+
+api.get('/api/usage', async c => {
+  const refresh = c.req.query('refresh') === '1'
+  return c.json(await usageOverview(refresh))
+})
 
 api.patch('/api/settings', async c => {
   let body: unknown

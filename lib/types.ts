@@ -405,6 +405,39 @@ export type OllamaServer = {
   baseUrl: string
 }
 
+export type UsageProvider = 'claude' | 'codex' | 'ollama' | 'jev'
+export type UsageStatus = 'available' | 'warning' | 'exhausted' | 'unavailable' | 'unknown'
+
+// Latest provider-level usage observation, persisted in the moi data dir.
+// Quota percentages are always 0..100. Availability rows intentionally omit
+// percentages because local Ollama servers do not have a quota.
+export type UsageSnapshot = {
+  id: string
+  provider: UsageProvider
+  label: string
+  kind: 'quota' | 'availability' | 'spend'
+  status: UsageStatus
+  window?: string
+  accountId?: string
+  usedPercent?: number
+  resetsAt?: string
+  observedAt: string
+  staleAt: string
+  stale?: boolean
+  detail?: string
+  modelCount?: number
+  loadedModelCount?: number
+  spentUsd?: number
+  balanceUsd?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+export type UsageOverview = {
+  snapshots: UsageSnapshot[]
+  generatedAt: string
+}
+
 // Client-safe subset of the startup config (`config.json` in the data dir +
 // `MOI_*` env overrides), served by GET /api/config. Frozen for the process
 // lifetime — changing it requires a server restart, so clients may cache it

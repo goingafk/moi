@@ -19,6 +19,22 @@ The legacy `execCommandApproval` and `applyPatchApproval` methods have a
 different `approved`/`denied` vocabulary. Transport routes these requests to
 the session-bound UI reviewer; an unknown thread is denied.
 
+## Phase 5 usage protocol
+
+Verified against installed `codex-cli 0.153.4` by generating its experimental
+TypeScript bindings and making a read-only live `account/rateLimits/read` call.
+The response contains `accountId`, a backward-compatible `rateLimits` bucket,
+and `rateLimitsByLimitId`. Each bucket has `primary` and `secondary` windows
+with `usedPercent`, `windowDurationMins`, and Unix-seconds `resetsAt`, plus plan
+and exhausted-state metadata. The captured account id is redacted in the
+committed fixture.
+
+The app server emits `account/rateLimits/updated` as a sparse notification.
+Its generated type explicitly tells clients to merge it with the last read or
+refetch. moi refetches `account/rateLimits/read` on that notification and once
+after each app-server initializes, so persistence never mistakes a sparse
+update for a complete snapshot.
+
 `approvalPolicy: on-request` with `workspace-write` is retained in every
 mode. In `auto`, native requests receive the pre-existing automatic answer.
 In `ask-risky`, requests are classified and may wait for a browser answer.

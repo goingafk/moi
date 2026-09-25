@@ -160,19 +160,77 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Added a shared `UsageSnapshot` contract and an atomic `usage-snapshots.json`
+  store in the per-user data directory. Provider observations carry normalized
+  0–100 usage, status, window/reset time, observation/stale time, and
+  provider-specific availability or spend details. Updates are broadcast over
+  the existing live-events socket and exposed through authenticated
+  `GET /api/usage`.
+- Claude subscription `rate_limit_event` messages are now retained for normal
+  Claude chats and excluded from Ollama-backed Claude sessions. Codex app
+  servers read `account/rateLimits/read` after initialization and refetch after
+  sparse `account/rateLimits/updated` notifications. Both protocols and their
+  installed-version shapes are documented in the harness notes.
+- Ollama rows report each configured server's availability plus installed and
+  loaded model counts, with no invented quota. Jev has a token-based local
+  spend recorder using the verified current input price; the UI stays explicit
+  that no local request has run yet.
+- Added a compact Usage popover to the workspace header and a full Usage page
+  in workspace settings. Both show used/remaining bars, window/reset copy,
+  freshness and stale state, local availability, and clear waiting states.
 
 ### Verification
 
-Not run.
+- `bun test`: 1,814 passed, 5 skipped, 0 failed. New tests cover Claude and
+  Codex normalization fixtures, epoch/percentage handling, exhausted and
+  unknown states, staleness boundaries, atomic latest-snapshot replacement,
+  live placeholder replacement, and UI copy.
+- `bun run typecheck`: passed. `bun run lint`: exited 0 with the same 9
+  pre-existing React warnings. `bun run format:check`: passed across 722 files.
+  `bun run build:client`: passed.
+- Verified Codex 0.153.4 by generating its experimental TypeScript bindings
+  and making a read-only live `account/rateLimits/read` probe. The committed
+  fixture redacts the account id while retaining the observed primary and
+  secondary window shapes.
+- Verified TypeSafe's official API/model documentation: System One responses
+  include input/output token counts; Jev 1.13 is $0.042 per million input
+  tokens and output tokens are free. The documented API has no account-balance
+  endpoint.
+- Production browser smoke test with isolated temporary data: the header
+  popover showed live Codex 5-hour and weekly bars with reset/freshness copy,
+  replaced its initial Codex placeholder, and Settings → Usage rendered the
+  same rows plus explicit Claude/Jev waiting states. The temporary server,
+  browser sessions, and data were removed afterward.
 
 ### Decisions
 
-None yet.
+- Persist observations rather than derived remaining percentages; remaining is
+  computed from normalized used percentage in the client. Quota observations
+  become stale after 15 minutes and Ollama availability after 2 minutes.
+- Refetch Codex's complete rate-limit response on sparse notifications instead
+  of attempting a partial merge without account/bucket context.
+- Keep Claude usage event-driven as planned rather than adopting the SDK's
+  explicitly unstable experimental `/usage` control API.
+- Keep Jev pricing at the future Jev call boundary and persist cumulative token
+  totals. Do not probe undocumented TypeSafe balance routes or invent a balance.
 
 ### Open items
 
-All Phase 5 tasks in `PLAN.md`.
+- No live Claude `rate_limit_event` existed in the local session archive, so
+  the Claude fixture is based on the installed SDK declaration. The normalizer
+  defensively accepts seconds/milliseconds and ratio/percentage utilization;
+  capture and confirm a real event on the owner deployment when one arrives.
+- Jev has no call site until the memory/router phases. Those callers must invoke
+  `recordJevUsage` with response token counts. If pricing changes, accurate
+  historical repricing would require a price-period ledger rather than the
+  current cumulative-token aggregate.
+- Run the usage panel on the owner LXC with real Claude, Codex, and Ollama
+  traffic. The local production smoke test verified Codex and provider waiting
+  states but did not spend Claude or Jev usage.
+- The pre-existing Bun dev-bundler-only `Input` element-type failure reappeared
+  after HMR during browser testing, matching the Phase 2 open item. A clean
+  production build rendered and worked; the dev-bundler issue remains outside
+  Phase 5.
 
 ## Phase 6 — Memory service and moi integration
 

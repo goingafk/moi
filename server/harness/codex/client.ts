@@ -24,6 +24,7 @@ import { readCodexPages } from './pagination'
 import { debug } from '../../debug'
 import { tapWire } from '../debug'
 import { resolveWorkspaceEnv } from '../../workspace-env'
+import { recordCodexUsage } from '../../usage'
 
 export type CodexProcessInfo = {
   running: boolean
@@ -57,6 +58,14 @@ export type CodexClient = {
   // CLI version from the initialize handshake's userAgent; undefined when it
   // could not be parsed.
   cliVersion: string | undefined
+}
+
+async function refreshCodexUsage(client: CodexClient): Promise<void> {
+  try {
+    await recordCodexUsage(await client.rpc('account/rateLimits/read'))
+  } catch (error) {
+    debug(`could not read Codex usage: ${error instanceof Error ? error.message : error}`)
+  }
 }
 
 // Older servers silently ignore additionalContext. Gate by handshake version
@@ -149,6 +158,7 @@ async function startClient(workspacePath: string): Promise<ClientRecord> {
   transport.onNotification(method => {
     if (method === 'account/updated' || method === 'account/login/completed')
       codexModelCatalogs.delete(client)
+    if (method === 'account/rateLimits/updated') void refreshCodexUsage(client)
     if (method !== '__exit') return
     if (liveProcesses.get(workspacePath)?.proc === proc) liveProcesses.delete(workspacePath)
     debug(`codex app-server exited ws=${workspacePath}`)
@@ -192,6 +202,7 @@ async function startClient(workspacePath: string): Promise<ClientRecord> {
     client.supportsAdditionalContext = codexSupportsAdditionalContext(init?.userAgent)
     client.cliVersion = parseCodexCliVersion(init?.userAgent)
     transport.notify('initialized')
+    void refreshCodexUsage(client)
     debug(
       `codex app-server started ws=${workspacePath} bin=${bin} ua=${init?.userAgent ?? 'unknown'} additionalContext=${client.supportsAdditionalContext}`
     )

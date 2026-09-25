@@ -1,0 +1,9 @@
+{
+  "source": "SDKRateLimitInfo declaration in @anthropic-ai/claude-agent-sdk; no local live event was available",
+  "payload": {
+    "status": "allowed_warning",
+    "resetsAt": 1790390504,
+    "rateLimitType": "five_hour",
+    "utilization": 0.82
+  }
+}

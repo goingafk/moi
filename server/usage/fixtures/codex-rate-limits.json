@@ -1,0 +1,26 @@
+{
+  "source": "codex-cli 0.153.4 account/rateLimits/read, captured 2026-09-25; account id replaced",
+  "payload": {
+    "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "primary": { "usedPercent": 31, "windowDurationMins": 300, "resetsAt": 1790390504 },
+      "secondary": { "usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1790977304 },
+      "spendControlReached": false,
+      "planType": "plus",
+      "rateLimitReachedType": null
+    },
+    "rateLimitsByLimitId": {
+      "codex": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": { "usedPercent": 31, "windowDurationMins": 300, "resetsAt": 1790390504 },
+        "secondary": { "usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1790977304 },
+        "spendControlReached": false,
+        "planType": "plus",
+        "rateLimitReachedType": null
+      }
+    },
+    "accountId": "account-redacted"
+  }
+}

@@ -49,6 +49,7 @@ import { useViewBuilderActions } from '@/client/features/views/useViewBuilderAct
 import { useViewBuilderDrafts } from '@/client/features/views/useViewBuilderDrafts'
 import { useFitsSplitLayout } from '@/client/features/workspace/useFitsSplitLayout'
 import { useWorkspaceComposerState } from '@/client/features/chat/composer/useWorkspaceComposerState'
+import { UsageIndicator } from '@/client/features/usage/UsageIndicator'
 import { useWorkspaceTheme } from '@/client/runtime/workspace-theme'
 import { resolveWorkspaceTheme } from '@/lib/themes'
 import {
@@ -771,6 +772,7 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
             onReorder={reorderTabs}
           />
         </div>
+        <UsageIndicator />
         {hasWorkspaceContent && canUseSplit && mode === 'fullscreen' && (
           <Tooltip>
             <TooltipTrigger
