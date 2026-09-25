@@ -31,6 +31,8 @@ export type SendMessageInput = {
   attachments?: MessageAttachment[]
   optimisticId?: string
   model?: string
+  // Server-resolved provider profile, never accepted from a browser frame.
+  agentEnv?: Record<string, string>
   effort?: string
   fastMode?: boolean
   stream?: boolean

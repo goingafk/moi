@@ -16,7 +16,12 @@ export type AppSettingsPatch = Partial<AppSettings>
 // Whitelist of fields the API may update. Type validation is NOT duplicated
 // here — `saveAppSettings` validates the merged store against the conf schema
 // before anything is written, so a bad value throws with nothing persisted.
-const API_UPDATABLE = ['autoUpdateSkills'] as const satisfies readonly (keyof AppSettings)[]
+const API_UPDATABLE = [
+  'autoUpdateSkills',
+  'modelMode',
+  'ollamaServers',
+  'localMcpServers'
+] as const satisfies readonly (keyof AppSettings)[]
 
 // Pick the API-updatable fields out of an untrusted body; unknown keys are
 // dropped. Values are intentionally unchecked — the conf schema rejects wrong
@@ -44,7 +49,23 @@ function store(): Conf<AppSettings> {
     cwd: _dir,
     configName: 'settings',
     schema: {
-      autoUpdateSkills: { type: 'boolean', default: false }
+      autoUpdateSkills: { type: 'boolean', default: false },
+      modelMode: { type: 'string', enum: ['manual', 'auto'], default: 'manual' },
+      localMcpServers: { type: 'array', default: [], items: { type: 'string', minLength: 1 } },
+      ollamaServers: {
+        type: 'array',
+        default: [],
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            name: { type: 'string', minLength: 1 },
+            baseUrl: { type: 'string', minLength: 1 }
+          },
+          required: ['id', 'name', 'baseUrl'],
+          additionalProperties: false
+        }
+      }
     }
   })
   return _store
@@ -60,6 +81,37 @@ export function getAppSettings(): AppSettings {
 // and persists nothing.
 export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const settings = store()
+  if (patch.ollamaServers) {
+    if (!Array.isArray(patch.ollamaServers)) throw new Error('Ollama servers must be a list')
+    const ids = new Set<string>()
+    for (const server of patch.ollamaServers) {
+      if (
+        typeof server.id !== 'string' ||
+        typeof server.name !== 'string' ||
+        typeof server.baseUrl !== 'string'
+      ) {
+        throw new Error('Invalid Ollama server')
+      }
+      if (ids.has(server.id)) throw new Error('Ollama server IDs must be unique')
+      ids.add(server.id)
+      let url: URL
+      try {
+        url = new URL(server.baseUrl)
+      } catch {
+        throw new Error('Invalid Ollama server URL')
+      }
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        url.pathname !== '/' ||
+        url.search ||
+        url.hash
+      ) {
+        throw new Error('Ollama server URL must be an HTTP(S) origin without credentials or a path')
+      }
+    }
+  }
   if (Object.keys(patch).length > 0) settings.set(patch)
   return settings.store
 }

@@ -49,3 +49,16 @@ describe('session Fast mode config', () => {
     expect(await getSessionConfig(workspacePath, 'real')).toEqual({ fastMode: false })
   })
 })
+
+describe('session agent binding', () => {
+  test('survives rename and refuses rebinding', async () => {
+    const agent = { type: 'ollama' as const, serverId: 'home' }
+    await saveSessionConfig(workspacePath, 'temporary', { agent, model: 'qwen3.8:27b' })
+    await renameSessionConfig(workspacePath, 'temporary', 'real')
+    expect(await getSessionConfig(workspacePath, 'real')).toEqual({ agent, model: 'qwen3.8:27b' })
+    await expect(
+      saveSessionConfig(workspacePath, 'real', { agent: { type: 'codex' } })
+    ).rejects.toThrow('cannot change agents')
+    expect((await getSessionConfig(workspacePath, 'real')).agent).toEqual(agent)
+  })
+})

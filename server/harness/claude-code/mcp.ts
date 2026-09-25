@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { McpServerStatus, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { McpServerStatus, Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 import { debugEnabled } from '../../debug'
 import { requireHarnessExecutable } from '../executable'
@@ -46,7 +46,15 @@ function logMcpStatus(status: McpServerStatus[]): void {
   console.log('[mcp]', parts.join(' · '))
 }
 
-async function probeMcpStatus(workspacePath: string): Promise<McpServerStatus[]> {
+export type LocalMcpProfile = {
+  baseUrl: string
+  servers: NonNullable<Options['mcpServers']>
+}
+
+async function probeMcpStatus(
+  workspacePath: string,
+  local?: LocalMcpProfile
+): Promise<McpServerStatus[]> {
   // A prompt that never yields keeps the session alive without a model turn.
   let release!: () => void
   const done = new Promise<void>(r => (release = r))
@@ -63,8 +71,19 @@ async function probeMcpStatus(workspacePath: string): Promise<McpServerStatus[]>
       cwd: workspacePath,
       pathToClaudeCodeExecutable: requireHarnessExecutable('claude-code'),
       persistSession: false,
-      settingSources: ['user', 'project'],
-      env: { ...process.env, CLAUDECODE: undefined }
+      settingSources: local ? ['project'] : ['user', 'project'],
+      ...(local ? { strictMcpConfig: true, mcpServers: local.servers } : {}),
+      env: {
+        ...process.env,
+        CLAUDECODE: undefined,
+        ...(local
+          ? {
+              ANTHROPIC_BASE_URL: local.baseUrl,
+              ANTHROPIC_AUTH_TOKEN: 'ollama',
+              ANTHROPIC_API_KEY: ''
+            }
+          : {})
+      }
     }
   })
 
@@ -113,21 +132,28 @@ const cache = new Map<string, CacheEntry>()
 // cheap insurance against parallel probes of the same workspace.
 const inflight = new Map<string, Promise<McpServerStatus[]>>()
 
-export async function getMcpStatus(workspacePath: string): Promise<McpServerStatus[]> {
-  const cached = cache.get(workspacePath)
+export async function getMcpStatus(
+  workspacePath: string,
+  local?: LocalMcpProfile
+): Promise<McpServerStatus[]> {
+  if (local && Object.keys(local.servers).length === 0) return []
+  const key = local
+    ? `${workspacePath}:${local.baseUrl}:${Object.keys(local.servers).sort().join(',')}`
+    : workspacePath
+  const cached = cache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.status
 
-  const existing = inflight.get(workspacePath)
+  const existing = inflight.get(key)
   if (existing) return existing
 
-  const probe = probeMcpStatus(workspacePath)
+  const probe = probeMcpStatus(workspacePath, local)
     .then(status => {
       const ttl = ttlFor(status)
-      if (ttl > 0) cache.set(workspacePath, { status, expiresAt: Date.now() + ttl })
+      if (ttl > 0) cache.set(key, { status, expiresAt: Date.now() + ttl })
       return status
     })
-    .finally(() => inflight.delete(workspacePath))
+    .finally(() => inflight.delete(key))
 
-  inflight.set(workspacePath, probe)
+  inflight.set(key, probe)
   return probe
 }

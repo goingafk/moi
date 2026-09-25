@@ -34,6 +34,8 @@ import { publishEvent } from './events'
 import { callFunction, parseFunctionPath } from './functions'
 import { processIcon } from './icon'
 import { getWorkspacePreview, loadLayout, mergeLayoutForSave, saveLayout } from './layout'
+import { listModelCatalog } from './model-catalog'
+import { localMcpConfig } from './ollama/mcp'
 import {
   getAppletThumbnailRecords,
   isValidAppletId,
@@ -41,6 +43,7 @@ import {
   serveAppletThumbnail
 } from './thumbnails'
 import { getClientFrameLog, getWireLog } from './harness/debug'
+import { getMcpStatus } from './harness/claude-code/mcp'
 import { allHarnesses, harnessFor, isHarnessType } from './harness/registry'
 import { broadcast } from './state'
 import {
@@ -63,6 +66,12 @@ import {
 import type { SelectedSessionUpdate } from './selected-session'
 import { getSessionConfig, saveSessionConfig } from './session-config'
 import type { SessionConfigPatch } from './session-config'
+import {
+  harnessForSessionAgent,
+  listWorkspaceSessions,
+  sessionAgentFor,
+  workspaceSessionPreview
+} from './session-routing'
 import { DIST_DIR, prebuilt } from './static'
 import { getWorkspaceSkillsStatus, updateWorkspaceSkills } from './skill-update'
 import { serveWorkspaceImagePreview } from './preview'
@@ -181,7 +190,7 @@ one.get('/preview', async c => {
   return c.json(
     await getWorkspacePreview(ws.path, {
       getProviderPreview: includeFirstUserMessage =>
-        harnessFor(ws).workspacePreview(ws, includeFirstUserMessage),
+        workspaceSessionPreview(ws, includeFirstUserMessage),
       viewIds: views.map(view => view.id),
       thumbnailUrl: (kind, id) =>
         `/api/workspaces/${ws.id}/applet-thumbnails/${kind}/${encodeURIComponent(id)}`
@@ -547,14 +556,14 @@ one.get('/uploads/:uploadId', c => {
 
 one.get('/sessions', async c => {
   const ws = c.get('ws')
-  return c.json(await harnessFor(ws).listSessions(ws))
+  return c.json(await listWorkspaceSessions(ws))
 })
 
 one.get('/selected-session', async c => {
   const ws = c.get('ws')
   let sessionId = await getSelectedSession(ws.path)
   if (sessionId === undefined) {
-    const sessions = await harnessFor(ws).listSessions(ws)
+    const sessions = await listWorkspaceSessions(ws)
     const latest = sessions.reduce<SessionInfo | undefined>(
       (current, session) =>
         !current ||
@@ -595,8 +604,8 @@ one.put('/selected-session', async c => {
 
 one.post('/sessions/:sessionId/archive', async c => {
   const ws = c.get('ws')
-  const harness = harnessFor(ws)
   const sessionId = c.req.param('sessionId')
+  const harness = harnessForSessionAgent(await sessionAgentFor(ws, sessionId))
   if (!harness.archiveSession) return c.text('Chat archiving is not supported', 501)
 
   try {
@@ -617,7 +626,10 @@ one.post('/sessions/:sessionId/archive', async c => {
 
 one.get('/sessions/:sessionId/events', async c => {
   const ws = c.get('ws')
-  return c.json(await harnessFor(ws).sessionEvents(ws, c.req.param('sessionId')))
+  const sessionId = c.req.param('sessionId')
+  return c.json(
+    await harnessForSessionAgent(await sessionAgentFor(ws, sessionId)).sessionEvents(ws, sessionId)
+  )
 })
 
 // Per-session agent settings (model, reasoning effort, and Fast mode). GET
@@ -655,7 +667,20 @@ one.put('/sessions/:sessionId/config', async c => {
 
 one.get('/mcp', async c => {
   const ws = c.get('ws')
-  return c.json((await harnessFor(ws).mcpStatus?.(ws)) ?? [])
+  const sessionId = c.req.query('sessionId')
+  const agent = sessionId ? await sessionAgentFor(ws, sessionId) : undefined
+  if (agent?.type === 'ollama') {
+    const server = getAppSettings().ollamaServers.find(item => item.id === agent.serverId)
+    if (!server) return c.json([])
+    return c.json(
+      await getMcpStatus(ws.path, {
+        baseUrl: server.baseUrl,
+        servers: await localMcpConfig(ws.path)
+      })
+    )
+  }
+  const harness = agent ? harnessForSessionAgent(agent) : harnessFor(ws)
+  return c.json((await harness.mcpStatus?.(ws)) ?? [])
 })
 
 // Harness debug tap for /dev/harness: the backend's native wire frames
@@ -664,7 +689,10 @@ one.get('/mcp', async c => {
 // `sinceWire`/`sinceBroadcast` are seq cursors so the page can poll deltas.
 one.get('/harness/debug', async c => {
   const ws = c.get('ws')
-  const harness = harnessFor(ws)
+  const sessionId = c.req.query('sessionId')
+  const harness = sessionId
+    ? harnessForSessionAgent(await sessionAgentFor(ws, sessionId))
+    : harnessFor(ws)
   const sinceWire = Number(c.req.query('sinceWire') ?? 0) || 0
   const sinceBroadcast = Number(c.req.query('sinceBroadcast') ?? 0) || 0
   return c.json({
@@ -785,6 +813,10 @@ one.get('/agent', async c => {
     supportsStreaming: harness.capabilities.supportsStreaming,
     supportsArchiving: Boolean(harness.archiveSession)
   } satisfies WorkspaceAgent)
+})
+
+one.get('/models', async c => {
+  return c.json(await listModelCatalog(c.get('ws'), c.req.query('refresh') === '1'))
 })
 
 // Workspace identity. Uploads use the image route below.
@@ -983,7 +1015,7 @@ one.delete('/', async c => {
   const ws = c.get('ws')
   const ok = await removeWorkspace(ws.id)
   if (!ok) return c.text('Workspace not found', 404)
-  harnessFor(ws).stopWorkspace?.(ws.path)
+  for (const harness of allHarnesses()) harness.stopWorkspace?.(ws.path)
   return c.body(null, 204)
 })
 

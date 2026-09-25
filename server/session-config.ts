@@ -1,7 +1,8 @@
 import { mkdir, rename } from 'node:fs/promises'
 import { join } from 'path'
 
-import type { SessionConfig } from '@/lib/types'
+import type { SessionAgent, SessionConfig } from '@/lib/types'
+import { isSessionAgent, sameSessionAgent } from '@/lib/session-agent'
 
 import { DATA_DIR } from './data-dir'
 
@@ -14,6 +15,7 @@ import { DATA_DIR } from './data-dir'
 
 // A patch may clear a field with `null` (vs `undefined`, which leaves it alone).
 export type SessionConfigPatch = {
+  agent?: SessionAgent
   model?: string | null
   effort?: string | null
   fastMode?: boolean | null
@@ -32,6 +34,7 @@ export function setSessionConfigPath(path: string): void {
 
 function clean(cfg: SessionConfig | undefined): SessionConfig {
   const out: SessionConfig = {}
+  if (isSessionAgent(cfg?.agent)) out.agent = cfg.agent
   if (typeof cfg?.model === 'string') out.model = cfg.model
   if (typeof cfg?.effort === 'string') out.effort = cfg.effort
   if (typeof cfg?.fastMode === 'boolean') out.fastMode = cfg.fastMode
@@ -39,7 +42,12 @@ function clean(cfg: SessionConfig | undefined): SessionConfig {
 }
 
 function isEmpty(cfg: SessionConfig): boolean {
-  return cfg.model === undefined && cfg.effort === undefined && cfg.fastMode === undefined
+  return (
+    cfg.agent === undefined &&
+    cfg.model === undefined &&
+    cfg.effort === undefined &&
+    cfg.fastMode === undefined
+  )
 }
 
 async function readStoreFile(path: string): Promise<Store | null> {
@@ -81,8 +89,43 @@ export async function getSessionConfig(
   })
 }
 
+export async function getSessionConfigs(
+  workspacePath: string
+): Promise<Record<string, SessionConfig>> {
+  return locked(async () => {
+    const store = await readStore()
+    return Object.fromEntries(
+      Object.entries(store[workspacePath] ?? {}).map(([id, config]) => [id, clean(config)])
+    )
+  })
+}
+
+// Bind discovered provider-owned histories in one write. Existing bindings
+// win; a session ID that was intentionally assigned elsewhere is never moved.
+export async function bindDiscoveredSessionAgents(
+  workspacePath: string,
+  bindings: readonly { sessionId: string; agent: SessionAgent }[]
+): Promise<void> {
+  if (bindings.length === 0) return
+  await locked(async () => {
+    const store = await readStore()
+    const sessions = store[workspacePath] ?? {}
+    let changed = false
+    for (const { sessionId, agent } of bindings) {
+      const current = clean(sessions[sessionId])
+      if (current.agent) continue
+      sessions[sessionId] = { ...current, agent }
+      changed = true
+    }
+    if (!changed) return
+    store[workspacePath] = sessions
+    await writeStore(store)
+  })
+}
+
 export async function hasSessionConfig(workspacePath: string, sessionId: string): Promise<boolean> {
-  return !isEmpty(await getSessionConfig(workspacePath, sessionId))
+  const config = await getSessionConfig(workspacePath, sessionId)
+  return config.model !== undefined || config.effort !== undefined || config.fastMode !== undefined
 }
 
 // Merge a patch over the stored config and write it back. `null` clears a field,
@@ -97,6 +140,12 @@ export async function saveSessionConfig(
     const store = await readStore()
     const sessions = store[workspacePath] ?? {}
     const next = clean(sessions[sessionId])
+    if (patch.agent) {
+      if (next.agent && !sameSessionAgent(next.agent, patch.agent)) {
+        throw new Error('A chat cannot change agents; start a new chat instead')
+      }
+      next.agent = patch.agent
+    }
     for (const key of ['model', 'effort'] as const) {
       const value = patch[key]
       if (value === undefined) continue

@@ -35,6 +35,7 @@ import {
   renameViewBuilderSession
 } from '../../view-builders'
 import { resolveWorkspaceEnv } from '../../workspace-env'
+import { localMcpConfig } from '../../ollama/mcp'
 import { requireHarnessExecutable } from '../executable'
 import type { SendMessageInput } from '../types'
 
@@ -427,17 +428,14 @@ async function consume(s: LiveSession) {
       if (msg.type === 'system' && msg.subtype === 'init') {
         s.messages.isNew = false
         const realId = msg.session_id
+        let renamedFrom: string | undefined
         if (realId && realId !== s.sessionId) {
           const from = renameSession(s, realId)
+          renamedFrom = from
           // Carry any config the picker wrote under the temp id to the real id.
           await renameSessionConfig(s.workspacePath, from, s.sessionId)
           await renameSelectedSession(s.workspacePath, from, s.sessionId)
           await renameViewBuilderSession(s.workspaceId, s.workspacePath, from, s.sessionId)
-          broadcast(s.workspaceId, {
-            type: 'session_renamed',
-            from,
-            to: s.sessionId
-          })
         }
         startClaudeSessionTitleJob(s)
         // Seed explicit startup settings only when no saved picker choice exists.
@@ -450,6 +448,11 @@ async function consume(s: LiveSession) {
             effort: s.effort,
             fastMode: s.fastMode
           })
+        }
+        if (renamedFrom) {
+          // The client refetches config on rename; publish only after the
+          // startup model has been saved under the permanent ID.
+          broadcast(s.workspaceId, { type: 'session_renamed', from: renamedFrom, to: s.sessionId })
         }
       }
       for (const ev of s.adapter.ingest(msg)) {
@@ -615,6 +618,7 @@ function createLiveSession(input: {
   stream: boolean
   // Resolved workspace env, fixed for the lifetime of the subprocess.
   workspaceEnv: Record<string, string>
+  localMcpServers?: NonNullable<Options['mcpServers']>
   sessionTitleSource: string | undefined
 }): LiveSession {
   evictIfNeeded()
@@ -642,7 +646,8 @@ function createLiveSession(input: {
     // reaches a prompt without passing through `PreToolUse`.
     hooks: CLAUDE_APPROVAL_HOOKS,
     canUseTool: async (_toolName, toolInput) => ({ behavior: 'allow', updatedInput: toolInput }),
-    settingSources: ['user', 'project'],
+    settingSources: input.localMcpServers ? ['project'] : ['user', 'project'],
+    ...(input.localMcpServers ? { strictMcpConfig: true, mcpServers: input.localMcpServers } : {}),
     // MOI_AGENT marks every shell this session spawns as agent-driven (the
     // moi CLI reads it — see agent-caller.ts), surviving the CLAUDECODE strip.
     env: { ...process.env, ...input.workspaceEnv, CLAUDECODE: undefined, MOI_AGENT: '1' },
@@ -771,7 +776,11 @@ async function dispatchNextMessage(messages: SessionMessages): Promise<void> {
   if (s && s.activity !== 'idle') return
   const { input } = message
   const stream = input.stream === true
-  const rebuild = s && (s.staleCli || stream !== s.stream)
+  const rebuild =
+    s &&
+    (s.staleCli ||
+      stream !== s.stream ||
+      Object.entries(input.agentEnv ?? {}).some(([key, value]) => s?.workspaceEnv[key] !== value))
   // Background jobs belong to their subprocess. Retain both the job and the
   // queued prompt until it is safe to resume with the requested configuration.
   if (s && rebuild && s.bgTasks.size > 0) return
@@ -784,7 +793,10 @@ async function dispatchNextMessage(messages: SessionMessages): Promise<void> {
       s = undefined
     }
     if (!s) {
-      const workspaceEnv = await resolveWorkspaceEnv(messages.workspacePath)
+      const workspaceEnv = {
+        ...(await resolveWorkspaceEnv(messages.workspacePath)),
+        ...input.agentEnv
+      }
       if (cancelled()) return
       const isNew =
         messages.isNew ||
@@ -801,6 +813,10 @@ async function dispatchNextMessage(messages: SessionMessages): Promise<void> {
         fastMode: input.fastMode,
         stream,
         workspaceEnv,
+        localMcpServers:
+          input.agentEnv?.ANTHROPIC_AUTH_TOKEN === 'ollama'
+            ? await localMcpConfig(messages.workspacePath)
+            : undefined,
         sessionTitleSource: isNew ? message.titleSource : undefined
       })
     } else {

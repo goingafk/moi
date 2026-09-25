@@ -1,6 +1,7 @@
 import { isMessageAttachments } from '@/lib/message-attachments'
 import type { ClientMessage, StatusSnapshotMessage } from '@/lib/types'
 import { isMoiContext } from '@/lib/moi-context'
+import { isSessionAgent } from '@/lib/session-agent'
 
 import index from '../client/index.html'
 import { api } from './api'
@@ -15,9 +16,10 @@ import { killAllWorkers } from './functions'
 import { startScratchpadSweeper } from './scratchpad'
 import { navigationRelay } from './navigation-relay'
 import { resolveScratchOp } from './scratchpad-relay'
-import { allHarnesses, harnessFor } from './harness/registry'
+import { allHarnesses } from './harness/registry'
 import { getWorkspace } from './registry'
 import { saveSelectedSession } from './selected-session'
+import { harnessForSessionAgent, resolveSessionRun, sessionAgentFor } from './session-routing'
 import {
   addClient,
   broadcast,
@@ -43,6 +45,7 @@ function isClientMessage(value: unknown): value is ClientMessage {
     isNew?: unknown
     optimisticId?: unknown
     model?: unknown
+    agent?: unknown
     effort?: unknown
     fastMode?: unknown
     stream?: unknown
@@ -58,6 +61,7 @@ function isClientMessage(value: unknown): value is ClientMessage {
       typeof v.isNew === 'boolean' &&
       (v.optimisticId === undefined || typeof v.optimisticId === 'string') &&
       (v.model === undefined || typeof v.model === 'string') &&
+      (v.agent === undefined || isSessionAgent(v.agent)) &&
       (v.effort === undefined || typeof v.effort === 'string') &&
       (v.fastMode === undefined || typeof v.fastMode === 'boolean') &&
       (v.stream === undefined || typeof v.stream === 'boolean') &&
@@ -178,6 +182,17 @@ export const app = Bun.serve<WsData>({
         if (data.type === 'chat' && (data.content?.trim() || data.attachments?.length)) {
           const workspace = await getWorkspace(data.workspaceId)
           if (!workspace) return
+          let run: Awaited<ReturnType<typeof resolveSessionRun>>
+          try {
+            run = await resolveSessionRun(workspace, data.sessionId, data.agent, data.model)
+          } catch (error) {
+            broadcast(data.workspaceId, {
+              kind: 'error',
+              sessionId: data.sessionId,
+              content: error instanceof Error ? error.message : 'Could not start this agent'
+            })
+            return
+          }
           if (data.isNew) {
             const selection = await saveSelectedSession(workspace.path, data.sessionId, null)
             if (selection.changed) {
@@ -191,7 +206,7 @@ export const app = Bun.serve<WsData>({
           // Harnesses ignore fields they don't support (see SendMessageInput).
           // Their failures surface internally; attachment resolution happens
           // before a harness owns the send, so surface that one here.
-          void harnessFor(workspace)
+          void run.harness
             .sendMessage({
               workspaceId: data.workspaceId,
               workspacePath: workspace.path,
@@ -200,7 +215,8 @@ export const app = Bun.serve<WsData>({
               content: data.content.trim(),
               attachments: data.attachments,
               optimisticId: data.optimisticId,
-              model: data.model,
+              model: run.model,
+              agentEnv: run.agentEnv,
               effort: data.effort,
               fastMode: data.fastMode,
               stream: data.stream,
@@ -219,7 +235,9 @@ export const app = Bun.serve<WsData>({
         }
         if (data.type === 'stop') {
           const workspace = await getWorkspace(data.workspaceId)
-          void harnessFor(workspace ?? undefined)
+          if (!workspace) return
+          const agent = await sessionAgentFor(workspace, data.sessionId)
+          void harnessForSessionAgent(agent)
             .interrupt(data.workspaceId, data.sessionId)
             .catch(() => {})
         }

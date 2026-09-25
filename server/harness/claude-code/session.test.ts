@@ -7,6 +7,7 @@ import * as state from '../../state'
 import * as viewBuilders from '../../view-builders'
 import * as workspaceEnv from '../../workspace-env'
 import * as sessionConfig from '../../session-config'
+import * as localMcp from '../../ollama/mcp'
 import * as selectedSession from '../../selected-session'
 import * as executable from '../executable'
 import type { SendMessageInput } from '../types'
@@ -115,6 +116,7 @@ beforeEach(() => {
     spyOn(history, 'claudeSessionExists').mockResolvedValue(true),
     spyOn(executable, 'requireHarnessExecutable').mockReturnValue('/fake/claude'),
     spyOn(workspaceEnv, 'resolveWorkspaceEnv').mockResolvedValue({}),
+    spyOn(localMcp, 'localMcpConfig').mockResolvedValue({}),
     spyOn(state, 'broadcast').mockImplementation((_id, frame) => {
       frames.push(frame)
     }),
@@ -140,6 +142,28 @@ afterEach(async () => {
 })
 
 describe('Claude session message queue', () => {
+  test('isolates local Ollama env and MCP profile from a normal Claude chat', async () => {
+    await send({
+      sessionId: 'local',
+      model: 'qwen3.8:27b',
+      agentEnv: {
+        ANTHROPIC_BASE_URL: 'http://127.0.0.1:11434',
+        ANTHROPIC_AUTH_TOKEN: 'ollama',
+        ANTHROPIC_API_KEY: ''
+      }
+    })
+    expect(drivers[0]?.options).toMatchObject({
+      model: 'qwen3.8:27b',
+      strictMcpConfig: true,
+      mcpServers: {},
+      settingSources: ['project'],
+      env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:11434', ANTHROPIC_AUTH_TOKEN: 'ollama' }
+    })
+    await send({ sessionId: 'cloud' })
+    expect(drivers[1]?.options.strictMcpConfig).toBeUndefined()
+    expect(drivers[1]?.options.settingSources).toEqual(['user', 'project'])
+    expect(drivers[1]?.options.env?.ANTHROPIC_BASE_URL).toBeUndefined()
+  })
   test('removing a workspace stops only its sessions and queued messages', async () => {
     await send()
     await send({ workspaceId: 'other', workspacePath: '/fake/other', sessionId: 'other' })

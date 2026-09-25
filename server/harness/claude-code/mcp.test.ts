@@ -5,6 +5,9 @@ type QueryCall = {
     cwd: string
     settingSources: string[]
     pathToClaudeCodeExecutable: string
+    strictMcpConfig?: boolean
+    mcpServers?: Record<string, unknown>
+    env?: Record<string, string | undefined>
   }
 }
 
@@ -66,4 +69,24 @@ test('settled MCP status survives an SDK cleanup error', async () => {
   closeError = new Error('Query closed before response received')
 
   expect(await getMcpStatus('/test/workspace/close-error')).toEqual([])
+})
+
+test('local MCP status uses only its explicit allow-list and Ollama env', async () => {
+  expect(
+    await getMcpStatus('/test/workspace/local-empty', {
+      baseUrl: 'http://127.0.0.1:11434',
+      servers: {}
+    })
+  ).toEqual([])
+  expect(queryCalls).toHaveLength(0)
+  await getMcpStatus('/test/workspace/local-allowed', {
+    baseUrl: 'http://127.0.0.1:11434',
+    servers: { chosen: { command: 'bun', args: ['server.ts'] } }
+  })
+  expect(queryCalls[0]?.options).toMatchObject({
+    strictMcpConfig: true,
+    settingSources: ['project'],
+    mcpServers: { chosen: { command: 'bun', args: ['server.ts'] } },
+    env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:11434', ANTHROPIC_AUTH_TOKEN: 'ollama' }
+  })
 })

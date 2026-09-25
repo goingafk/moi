@@ -949,7 +949,9 @@ async function sendMessage(
         ...(serviceTier !== undefined ? { serviceTier } : {})
       })
       const realId = started.thread.id
+      let renamedFrom: string | undefined
       if (realId !== input.sessionId) {
+        renamedFrom = input.sessionId
         aliases.set(recKey(input.workspaceId, input.sessionId), realId)
         sendLanes.set(recKey(input.workspaceId, realId), lane)
         await renameSessionConfig(input.workspacePath, input.sessionId, realId)
@@ -961,11 +963,6 @@ async function sendMessage(
           input.sessionId,
           realId
         )
-        broadcast(input.workspaceId, {
-          type: 'session_renamed',
-          from: input.sessionId,
-          to: realId
-        })
       }
       rec = createRecord({
         workspaceId: input.workspaceId,
@@ -985,6 +982,9 @@ async function sendMessage(
           effort: input.effort,
           fastMode: input.fastMode
         })
+      }
+      if (renamedFrom) {
+        broadcast(input.workspaceId, { type: 'session_renamed', from: renamedFrom, to: realId })
       }
     } else {
       rec = await resumeSession({

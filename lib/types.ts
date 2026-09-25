@@ -273,6 +273,8 @@ export type ClientMessage =
       // `value`). Omitted means the server's default. Applied per turn, so it
       // can change between messages in the same session.
       model?: string
+      // Agent choice for a new chat; existing sessions keep their stored binding.
+      agent?: SessionAgent
       // Reasoning effort for this turn (one of the model's `supportedEffortLevels`).
       // Omitted means the SDK default. Unlike model, the SDK has no live setter,
       // so a change forces the live session to resume (see server/cc-session.ts).
@@ -301,6 +303,8 @@ export type SessionInfo = {
   sessionId: string
   summary: string
   lastModified: number
+  // The backend that owns this session, independent of the workspace default.
+  agent?: SessionAgent
   cwd?: string
   // Where the conversation originates when the backend routes external
   // channels into it (OpenClaw: telegram/irc/discord/…; absent = app chat).
@@ -316,10 +320,15 @@ export type SessionInfo = {
 // model/effort/Fast mode it last ran with; a brand-new session is seeded from the
 // corresponding workspace defaults.
 export type SessionConfig = {
+  agent?: SessionAgent
   model?: string
   effort?: string
   fastMode?: boolean
 }
+
+export type SessionAgent =
+  | { type: 'claude-code' | 'codex' | 'hermes' | 'openclaw' }
+  | { type: 'ollama'; serverId: string }
 
 export type SelectedSessionState = {
   sessionId: string | null
@@ -332,6 +341,16 @@ export type AppSettings = {
   // Apply bundled workspace-skill updates automatically when a workspace
   // with outdated skills is opened, instead of prompting each time.
   autoUpdateSkills: boolean
+  // Auto is reserved for Phase 7; Phase 2 exposes manual model selection.
+  modelMode: 'manual' | 'auto'
+  ollamaServers: OllamaServer[]
+  localMcpServers: string[]
+}
+
+export type OllamaServer = {
+  id: string
+  name: string
+  baseUrl: string
 }
 
 // Client-safe subset of the startup config (`config.json` in the data dir +
@@ -735,6 +754,13 @@ export type Model = {
   // Provider-resolved default when moi has no stored Fast-mode preference.
   defaultFastMode?: boolean
   supportsAutoMode?: boolean
+}
+
+export type CatalogModel = Model & {
+  selectionId: string
+  agent: SessionAgent
+  ready?: boolean
+  disabledReason?: string
 }
 
 // GET /api/workspaces/:id/agent. Model changes arrive on refetch;

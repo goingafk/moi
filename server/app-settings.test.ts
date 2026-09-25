@@ -32,7 +32,12 @@ describe('app settings API', () => {
     const settings = (await response.json()) as AppSettings
 
     expect(response.status).toBe(200)
-    expect(settings).toEqual({ autoUpdateSkills: false })
+    expect(settings).toEqual({
+      autoUpdateSkills: false,
+      modelMode: 'manual',
+      ollamaServers: [],
+      localMcpServers: []
+    })
   })
 
   test('persists a patched setting to settings.json', async () => {
@@ -46,14 +51,27 @@ describe('app settings API', () => {
     expect(response.status).toBe(200)
     expect(settings.autoUpdateSkills).toBe(true)
     expect(JSON.parse(await Bun.file(join(tempDir, 'settings.json')).text())).toEqual({
-      autoUpdateSkills: true
+      autoUpdateSkills: true,
+      modelMode: 'manual',
+      ollamaServers: [],
+      localMcpServers: []
     })
 
     const readBack = await api.request('/api/settings')
     expect(((await readBack.json()) as AppSettings).autoUpdateSkills).toBe(true)
 
     // Other open clients learn about the change over the live-event channel.
-    expect(published).toEqual([{ type: 'settings:updated', settings: { autoUpdateSkills: true } }])
+    expect(published).toEqual([
+      {
+        type: 'settings:updated',
+        settings: {
+          autoUpdateSkills: true,
+          modelMode: 'manual',
+          ollamaServers: [],
+          localMcpServers: []
+        }
+      }
+    ])
   })
 
   test('rejects a non-boolean flag and unknown-only patches change nothing', async () => {
@@ -70,6 +88,40 @@ describe('app settings API', () => {
       body: JSON.stringify({ nope: true })
     })
     expect(unknown.status).toBe(200)
-    expect((await unknown.json()) as AppSettings).toEqual({ autoUpdateSkills: false })
+    expect((await unknown.json()) as AppSettings).toEqual({
+      autoUpdateSkills: false,
+      modelMode: 'manual',
+      ollamaServers: [],
+      localMcpServers: []
+    })
+  })
+
+  test('stores Ollama servers and rejects unsafe or duplicate origins', async () => {
+    const good = await api.request('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ollamaServers: [{ id: 'home', name: 'Home', baseUrl: 'http://100.125.20.45:11434' }]
+      })
+    })
+    expect(good.status).toBe(200)
+    expect(((await good.json()) as AppSettings).ollamaServers).toHaveLength(1)
+
+    for (const servers of [
+      [{ id: 'home', name: 'Home', baseUrl: 'file:///tmp/models' }],
+      [{ id: 'home', name: 'Home', baseUrl: 'http://user:secret@example.com' }],
+      [{ id: 'home', name: 'Home', baseUrl: 'http://example.com/path' }],
+      [
+        { id: 'home', name: 'Home', baseUrl: 'http://example.com' },
+        { id: 'home', name: 'Other', baseUrl: 'http://other.example.com' }
+      ]
+    ]) {
+      const response = await api.request('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ollamaServers: servers })
+      })
+      expect(response.status).toBe(400)
+    }
   })
 })
