@@ -6,6 +6,14 @@ Agent chat UI powered by Claude Agent SDK, Bun, React, and Tailwind.
 - `client/` — React SPA, components, hooks, styles
 - `lib/` — Shared types between server and client
 
+## Fork
+
+This is a personal fork of `molefrog/moi`, worked on phase by phase. Read `docs/fork/PLAN.md` (the source of truth) before starting fork work, and follow its working rules. Keep upstream conventions so upstream fixes stay easy to pull.
+
+- Agents are Claude Code, Codex, and local models on Ollama (via Claude Code pointed at Ollama); Jev (TypeSafe API, called directly) or Laya routes in Auto mode. No Hermes or OpenRouter work.
+- Remote access is Tailscale-only with moi bound to loopback; never bind a public interface.
+- npm self-update is off by default (`selfUpdate` in `config.json` / `MOI_SELF_UPDATE`) — the published `moi-computer` package is upstream and would replace the fork.
+
 ## Agent context layout
 
 `AGENTS.md` files (root, `client/`, `server/`) are the canonical instructions; every `CLAUDE.md` is a symlink to its sibling `AGENTS.md`. Edit the `AGENTS.md` files, never the symlinks. Rules and skills likewise live in agent-neutral directories, with symlinks for Claude Code:
