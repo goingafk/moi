@@ -22,8 +22,36 @@ test('defaults apply when no config file exists', () => {
     demoInstallUrl: 'https://moi.computer',
     selfUpdate: false,
     auth: null,
-    allowedUsers: []
+    allowedUsers: [],
+    publicUrl: null
   })
+})
+
+test('public URL is a normalized HTTPS origin and env wins', async () => {
+  const file = await configFile(JSON.stringify({ publicUrl: 'https://moi.tail.test/' }))
+  expect(loadAppConfig(file, NO_ENV).publicUrl).toBe('https://moi.tail.test')
+  expect(loadAppConfig(file, { MOI_PUBLIC_URL: 'https://other.tail.test:8443/' }).publicUrl).toBe(
+    'https://other.tail.test:8443'
+  )
+})
+
+test('invalid public URLs are ignored', async () => {
+  const errors: string[] = []
+  const spy = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    errors.push(args.map(String).join(' '))
+  })
+  try {
+    for (const publicUrl of [
+      'http://moi.tail.test',
+      'https://user@moi.tail.test',
+      'https://moi.tail.test/path'
+    ]) {
+      expect(loadAppConfig('/nonexistent', { MOI_PUBLIC_URL: publicUrl }).publicUrl).toBeNull()
+    }
+    expect(errors).toHaveLength(3)
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 test('auth and allowed users come from the config file, env wins', async () => {

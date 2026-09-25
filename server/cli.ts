@@ -10,6 +10,7 @@ import pc from './cli-pc'
 
 import { isAgentCaller } from './agent-caller'
 import { getAppConfig } from './app-config'
+import { browserBaseUrl, workspaceBrowserUrl } from './browser-url'
 
 import { appletSelectorMatches, parseAppletSelector } from '@/lib/applet-selector'
 import type { AppletSelector } from '@/lib/applet-selector'
@@ -152,6 +153,28 @@ async function openBrowser(url: string) {
     if (process.platform === 'darwin') await Bun.$`open ${url}`.quiet()
     else if (process.platform === 'linux') await Bun.$`xdg-open ${url}`.quiet()
   } catch {}
+}
+
+async function reportWorkspaceUrl(workspaceId: string, interactive: boolean): Promise<void> {
+  const url = workspaceBrowserUrl(getAppConfig(), getAuthPolicy(), PORT, workspaceId)
+  if (url === null) {
+    console.log(
+      '  Workspace path: ' +
+        pc.bold(`/workspace/${encodeURIComponent(workspaceId)}`) +
+        '\n' +
+        pc.dim(
+          '  Set publicUrl in config.json (or MOI_PUBLIC_URL) to print and open remote links.'
+        ) +
+        '\n'
+    )
+    return
+  }
+  if (interactive) {
+    console.log('  Opening ' + pc.bold(url) + '\n')
+    await openBrowser(url)
+  } else {
+    console.log('  Ready at ' + pc.bold(url) + '\n')
+  }
 }
 
 // Spawn the server as a child. MOI_SERVER=1 tells the child it is the actual
@@ -445,24 +468,21 @@ const init = defineCommand({
         await proc.exited
         process.exit(1)
       }
-      const url = `http://localhost:${PORT}/workspace/${entry.id}`
-      console.log(pc.green('✓') + ' Server started on http://localhost:' + PORT)
-      if (isInteractive) console.log('  Opening ' + pc.bold(url))
+      const baseUrl = browserBaseUrl(getAppConfig(), getAuthPolicy(), PORT)
+      console.log(
+        pc.green('✓') +
+          ' Server started' +
+          (baseUrl === null ? ' on 127.0.0.1:' + PORT : ' at ' + baseUrl)
+      )
       console.log(pc.dim('  Press Ctrl+C to stop\n'))
-      if (isInteractive) await openBrowser(url)
+      await reportWorkspaceUrl(entry.id, isInteractive)
       process.exit(await superviseServerUpdates(proc, () => spawnServer(cwd)))
     }
 
     if (running) {
       // Server already running — notify it and open (browser only in interactive mode)
       await registerViaControl(target)
-      const url = `http://localhost:${PORT}/workspace/${entry.id}`
-      if (isInteractive) {
-        console.log('  Opening ' + pc.bold(url) + '\n')
-        await openBrowser(url)
-      } else {
-        console.log('  Ready at ' + pc.bold(url) + '\n')
-      }
+      await reportWorkspaceUrl(entry.id, isInteractive)
       process.exit(0)
     }
 
@@ -565,7 +585,14 @@ const start = defineCommand({
       }
       process.exit(1)
     }
-    console.log(`\n${pc.green('✓')} Server started on http://localhost:${PORT}`)
+    const baseUrl = browserBaseUrl(getAppConfig(), getAuthPolicy(), PORT)
+    console.log(
+      `\n${pc.green('✓')} Server started` +
+        (baseUrl === null ? ` on 127.0.0.1:${PORT}` : ` at ${baseUrl}`)
+    )
+    if (baseUrl === null) {
+      console.log(pc.dim('  Set publicUrl in config.json (or MOI_PUBLIC_URL) for remote links.'))
+    }
     console.log(pc.dim(`  ${describeAuth(getAuthPolicy())}`))
     console.log(pc.dim('  Press Ctrl+C to stop\n'))
     // Stay alive as the server
@@ -1392,17 +1419,11 @@ const openclawInit = defineCommand({
     const isInteractive = process.stdout.isTTY
     const running = await isServerRunning()
     if (running) {
-      const url = `http://localhost:${PORT}/workspace/${entry.id}`
       // Notify the running server so it picks up the new entry without a
       // restart, then open (browser only in interactive mode) — same shape
       // as `moi init`'s already-running branch.
       await registerViaControl(target.path)
-      if (isInteractive) {
-        console.log('  Opening ' + pc.bold(url) + '\n')
-        await openBrowser(url)
-      } else {
-        console.log('  Ready at ' + pc.bold(url) + '\n')
-      }
+      await reportWorkspaceUrl(entry.id, isInteractive)
     } else {
       console.log('  Run ' + pc.bold('moi start') + ' to open in the browser\n')
     }
@@ -1527,14 +1548,8 @@ const hermesInit = defineCommand({
     const isInteractive = process.stdout.isTTY
     const running = await isServerRunning()
     if (running) {
-      const url = `http://localhost:${PORT}/workspace/${entry.id}`
       await registerViaControl(target.path)
-      if (isInteractive) {
-        console.log('  Opening ' + pc.bold(url) + '\n')
-        await openBrowser(url)
-      } else {
-        console.log('  Ready at ' + pc.bold(url) + '\n')
-      }
+      await reportWorkspaceUrl(entry.id, isInteractive)
     } else {
       console.log('  Run ' + pc.bold('moi start') + ' to open in the browser\n')
     }

@@ -18,7 +18,7 @@ phone / laptop ──HTTPS (tailnet only)──▶ tailscale serve ──http─
 
 If `auth` is not set, it is `off` under `bun run dev` and `tailscale` for everything else (`moi start`, services).
 
-Both modes also refuse cross-site browser requests (a mismatched `Origin`, or `Sec-Fetch-Site: cross-site` on anything but a top-level GET). Tailscale Serve adds your identity to every request your browser sends. Without this check, any web page you visit could drive moi as you.
+Both modes also refuse cross-site browser requests (a mismatched origin, including the scheme, or `Sec-Fetch-Site: cross-site` on anything but a top-level GET). Tailscale Serve adds your identity to every request your browser sends. Without this check, any web page you visit could drive moi as you. Tailscale mode additionally requires Serve's complete HTTPS proxy-header shape; a bare `Tailscale-User-Login` is not enough.
 
 What Tailscale Serve does, checked against its source (`ipn/ipnlocal/serve.go`, `addTailscaleIdentityHeaders`) and [the Serve docs](https://tailscale.com/kb/1312/serve):
 
@@ -61,11 +61,12 @@ Then create `~/.local/share/moi/config.json` (the data dir; `MOI_DATA_DIR` overr
 ```json
 {
   "auth": "tailscale",
+  "publicUrl": "https://my-server.my-tailnet.ts.net",
   "allowedUsers": ["goingafk@github"]
 }
 ```
 
-`MOI_AUTH` and `MOI_ALLOWED_USERS` (comma-separated) override the file. To add someone, add their login to `allowedUsers` and restart moi. With an empty list, every request is refused. The startup log says so (`auth: Tailscale — no allowed users yet`).
+`MOI_AUTH`, `MOI_PUBLIC_URL`, and `MOI_ALLOWED_USERS` (comma-separated) override the file. `publicUrl` is the HTTPS origin printed and opened by CLI commands; without it, the CLI prints only the workspace path rather than a non-working localhost link. To add someone, add their login to `allowedUsers` and restart moi. With an empty list, every request is refused. The startup log says so (`auth: Tailscale — no allowed users yet`).
 
 ## 3. Run moi as a service
 
@@ -94,7 +95,7 @@ loginctl enable-linger "$USER"     # keep it running when you're logged out
 journalctl --user -u moi -f        # should print "auth: Tailscale — 1 allowed user"
 ```
 
-Leave `HOST` unset. moi then binds `127.0.0.1`. With auth `off`, moi refuses to start on a non-loopback `HOST`. With `tailscale`, it starts but warns.
+Leave `HOST` unset. moi then binds `127.0.0.1`. In either auth mode, moi refuses to start on a non-loopback `HOST`; the loopback bind is part of the identity-header trust boundary.
 
 ## 4. Publish it with Tailscale Serve
 
@@ -123,6 +124,10 @@ From a device not on the tailnet, the `ts.net` name doesn't resolve and nothing 
 ## Local use on a laptop
 
 `bun run dev` needs nothing: auth defaults to `off` and you open `http://localhost:13337`. For `moi start` on a laptop, set `"auth": "off"` in `config.json`. `off` still refuses proxied requests, so putting it behind Tailscale Serve by mistake fails closed (401).
+
+## Browser and view testing on the server
+
+Do not point a browser tool at `http://localhost:13337` while the production server uses Tailscale auth: direct HTTP requests intentionally get 401. Use the configured `publicUrl` from a user-owned tailnet device, or run a separate development server with auth off on another loopback port. Applet thumbnails, image previews, applet RPC calls, and WebSockets are browser-originated relative URLs, so they continue through the authenticated Serve origin. Agent and CLI operations use the loopback-only control port and do not need HTTP auth.
 
 ## Known gap
 

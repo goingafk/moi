@@ -33,6 +33,9 @@ export type AppConfig = {
   auth: AuthSetting | null
   // Tailscale logins allowed in 'tailscale' mode (case-insensitive).
   allowedUsers: string[]
+  // Browser-visible HTTPS origin published by Tailscale Serve. Used only for
+  // CLI links; server-to-server commands keep using the control port.
+  publicUrl: string | null
 }
 
 export type AuthSetting = 'tailscale' | 'off'
@@ -43,7 +46,8 @@ const DEFAULTS: AppConfig = {
   demoInstallUrl: 'https://moi.computer',
   selfUpdate: false,
   auth: null,
-  allowedUsers: []
+  allowedUsers: [],
+  publicUrl: null
 }
 
 export const APP_CONFIG_FILE = join(DATA_DIR, 'config.json')
@@ -83,6 +87,27 @@ function parseAuth(raw: string | undefined): AuthSetting | undefined {
   if (value === 'tailscale' || value === 'off') return value
   warn(`ignoring MOI_AUTH=${raw} — expected "tailscale" or "off"`)
   return undefined
+}
+
+function parsePublicUrl(raw: string | undefined, label: string): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined
+  try {
+    const url = new URL(raw.trim())
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error('not an HTTPS origin')
+    }
+    return url.origin
+  } catch {
+    warn(`ignoring ${label}=${raw} — expected an HTTPS origin with no path`)
+    return undefined
+  }
 }
 
 function isStringList(value: unknown): value is string[] {
@@ -142,6 +167,11 @@ function fileValues(file: string): Partial<AppConfig> {
     if (isStringList(raw.allowedUsers)) out.allowedUsers = raw.allowedUsers
     else warn('ignoring "allowedUsers" — expected an array of strings')
   }
+  if (raw.publicUrl !== undefined) {
+    if (typeof raw.publicUrl === 'string') {
+      out.publicUrl = parsePublicUrl(raw.publicUrl, '"publicUrl"') ?? null
+    } else warn('ignoring "publicUrl" — expected an HTTPS origin')
+  }
   return out
 }
 
@@ -157,7 +187,8 @@ export function loadAppConfig(
     demoInstallUrl: parseString(env.MOI_DEMO_INSTALL_URL),
     selfUpdate: parseBool(env.MOI_SELF_UPDATE),
     auth: parseAuth(env.MOI_AUTH),
-    allowedUsers: parseList(env.MOI_ALLOWED_USERS)
+    allowedUsers: parseList(env.MOI_ALLOWED_USERS),
+    publicUrl: parsePublicUrl(env.MOI_PUBLIC_URL, 'MOI_PUBLIC_URL')
   }
   const merged = { ...DEFAULTS, ...fromFile }
   for (const key of Object.keys(fromEnv) as (keyof AppConfig)[]) {
