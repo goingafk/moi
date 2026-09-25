@@ -10,7 +10,8 @@ import {
   IconLetterCase,
   IconMessages,
   IconSettings,
-  IconSketching
+  IconSketching,
+  IconTerminal2
 } from '@tabler/icons-react'
 
 import { DrawingLayer } from '@/client/features/drawings/DrawingLayer'
@@ -95,6 +96,12 @@ const Scratchpad = lazy(() =>
   }))
 )
 
+const TerminalPage = lazy(() =>
+  import('@/client/features/terminal/TerminalPage').then(module => ({
+    default: module.TerminalPage
+  }))
+)
+
 const viewBuilderIcon = (builder: ViewBuilderData) => resolveAppIcon(builder.icon) ?? IconArticle
 
 type WorkspaceScreenProps = {
@@ -138,6 +145,9 @@ function tabItemFor(
       label: 'Scratchpad',
       closable
     }
+  }
+  if (tab === 'terminal') {
+    return { key: tab, Icon: IconTerminal2, label: 'Terminal', closable }
   }
   const builderId = viewBuilderIdFromTab(tab)
   const builder = builderId ? builders.find(candidate => candidate.id === builderId) : null
@@ -536,6 +546,16 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
           }
         ] satisfies CreateWorkspaceTabItem[])
       : []),
+    ...(!openSet.has('terminal')
+      ? ([
+          {
+            key: 'terminal',
+            Icon: IconTerminal2,
+            label: 'Terminal',
+            onClick: () => openTab('terminal')
+          }
+        ] satisfies CreateWorkspaceTabItem[])
+      : []),
     ...views
       .map(v => ({ view: v, tab: viewTabId(v.id) }))
       .filter(({ tab }) => !openSet.has(tab))
@@ -682,6 +702,10 @@ export function WorkspaceScreen({ widgets, views, builders }: WorkspaceScreenPro
           ) : activeTab === 'scratchpad' ? (
             <Suspense fallback={null}>
               <Scratchpad />
+            </Suspense>
+          ) : activeTab === 'terminal' ? (
+            <Suspense fallback={null}>
+              <TerminalPage />
             </Suspense>
           ) : null}
 

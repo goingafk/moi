@@ -663,6 +663,7 @@ export type WorkspaceTabId =
   | 'agent'
   | 'overview'
   | 'scratchpad'
+  | 'terminal'
   | `views/${string}`
   | `view-builders/${string}`
 

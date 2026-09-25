@@ -6,6 +6,7 @@ export function isWorkspaceTabId(value: unknown): value is WorkspaceTabId {
     value === 'agent' ||
     value === 'overview' ||
     value === 'scratchpad' ||
+    value === 'terminal' ||
     // Match the applet IDs accepted by the server's module routes.
     (typeof value === 'string' && /^(views|view-builders)\/[a-zA-Z0-9_-]+$/.test(value))
   )

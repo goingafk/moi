@@ -15,7 +15,8 @@ export function normalizeTabsState(tabs: WorkspaceTabsState | undefined): Worksp
 // Whether a tab id points at something that exists: static tabs always do,
 // view/builder tabs only while their view or builder is around.
 export function tabAvailable(tab: WorkspaceTabId, views: ViewInfo[], builders: ViewBuilder[]) {
-  if (tab === 'agent' || tab === 'overview' || tab === 'scratchpad') return true
+  if (tab === 'agent' || tab === 'overview' || tab === 'scratchpad' || tab === 'terminal')
+    return true
   const builderId = viewBuilderIdFromTab(tab)
   if (builderId) return builders.some(builder => builder.id === builderId)
   const viewId = viewIdFromTab(tab)

@@ -27,6 +27,7 @@ import { viewBuilderDirectives } from '@/lib/view-builder-directives'
 import { agentStore } from './agent'
 import { clientAppConfig, getAppConfig } from './app-config'
 import { getAppSettings, pickAppSettingsPatch, saveAppSettings } from './app-settings'
+import { getAuthPolicy } from './auth'
 import { appletForModule, recordAppletError } from './applet-log'
 import { apiBaseFor, parseAppletTail, serveWorkspaceFile } from './applets'
 import { applyEnvChanged } from './env-apply'
@@ -116,6 +117,7 @@ import {
   updateInProgress
 } from './update'
 import { VERSION } from './version'
+import { createTerminal, killTerminal, listTerminals, renameTerminal } from './terminal'
 
 // The resolved workspace is stashed on the context by `withWorkspace`, so every
 // `/api/workspaces/:id/*` handler can read it without re-querying the registry.
@@ -676,6 +678,51 @@ one.put('/sessions/:sessionId/config', async c => {
     patch.permissionMode = mode
   }
   return c.json(await saveSessionConfig(c.get('ws').path, c.req.param('sessionId'), patch))
+})
+
+// A terminal is a remote shell. It is deliberately unavailable in auth-off
+// development mode even though other local-only app routes work there.
+const terminalAuth = createMiddleware<ApiEnv>(async (c, next) => {
+  if (getAuthPolicy().mode === 'off') return c.text('Terminals require authentication', 403)
+  await next()
+})
+one.use('/terminals', terminalAuth)
+one.use('/terminals/*', terminalAuth)
+
+one.get('/terminals', async c => {
+  try {
+    return c.json(await listTerminals(c.get('ws').id))
+  } catch (error) {
+    return c.text(error instanceof Error ? error.message : 'Could not list terminals', 503)
+  }
+})
+
+one.post('/terminals', async c => {
+  try {
+    return c.json(await createTerminal(c.get('ws').id, c.get('ws').path), 201)
+  } catch (error) {
+    return c.text(error instanceof Error ? error.message : 'Could not create terminal', 503)
+  }
+})
+
+one.patch('/terminals/:terminalId', async c => {
+  const body: unknown = await c.req.json().catch(() => null)
+  if (
+    !body ||
+    typeof body !== 'object' ||
+    Array.isArray(body) ||
+    typeof (body as Record<string, unknown>).name !== 'string'
+  )
+    return c.text('Name must be a string', 400)
+  const name = (body as { name: string }).name.trim()
+  if (!name || name.length > 80) return c.text('Name must be 1–80 characters', 400)
+  const result = await renameTerminal(c.get('ws').id, c.req.param('terminalId'), name)
+  return result ? c.json(result) : c.text('Terminal not found', 404)
+})
+
+one.delete('/terminals/:terminalId', async c => {
+  const removed = await killTerminal(c.get('ws').id, c.req.param('terminalId'))
+  return removed ? c.body(null, 204) : c.text('Terminal not found', 404)
 })
 
 one.get('/mcp', async c => {

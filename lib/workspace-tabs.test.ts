@@ -14,6 +14,7 @@ describe('isWorkspaceTabId', () => {
     expect(isWorkspaceTabId('overview')).toBe(true)
     expect(isWorkspaceTabId('agent')).toBe(true)
     expect(isWorkspaceTabId('scratchpad')).toBe(true)
+    expect(isWorkspaceTabId('terminal')).toBe(true)
   })
 
   test('accepts view and view-builder tabs with a non-empty id', () => {

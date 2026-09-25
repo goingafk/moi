@@ -133,19 +133,26 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Added a terminal tab with xterm.js, a fit addon, reconnect control, mobile paste field, copy action, and create/reattach/rename/stop controls. Login shortcuts fill verified CLI commands for the user to review and send.
+- Server terminals are UUID-named tmux sessions with metadata in the per-user data directory. Bun's native PTY attaches a WebSocket client to each tmux session; closing the socket stops the attachment but leaves tmux running. API and socket routes use the Phase 1 auth gate and additionally refuse `auth: off`.
+- Updated the direct-tailnet setup guide with the tmux prerequisite and concrete steps for the existing `/home/moi/moi` container checkout. Bun PTY and installed CLI login commands are recorded in `terminal-notes.md`.
 
 ### Verification
 
-Not run.
+- `bun test`: 1,804 passed, 5 skipped, 0 failed with loopback socket permission. The extra skip is the real tmux reattach test because tmux is not installed on this Mac. Bun native PTY input/output passed locally; auth integration tests passed against real server processes, including terminal HTTP and WebSocket refusal with auth off.
+- `bun run typecheck`: passed. `bun run lint`: passed with the same 9 pre-existing React warnings. `bun run format:check`: passed. `bun run build:client`: passed.
+- Locally installed `codex-cli 0.153.4` advertises `login --device-auth`; the installed Claude CLI advertises `auth login`. No login was performed using the owner's credentials during development.
 
 ### Decisions
 
-None yet.
+- Use Bun's native PTY, so no native PTY package is added. Add only `@xterm/xterm` and its fit addon on the client; tmux is an OS prerequisite, not a bundled dependency.
+- Disable terminal access in auth-off development mode, even on loopback. This is a remote shell and needs an authenticated device/user boundary.
+- Do not add a login-protocol parser: the CLI output is rendered in the terminal and the user follows its printed URL/code. The existing harness `startLogin` hooks remain available in the chat setup flow.
 
 ### Open items
 
-All Phase 4 tasks in `PLAN.md`.
+- A real tmux detach/reattach test is present but skipped on this Mac because tmux is not installed. Run it on the LXC after installing tmux, then test a phone disconnect/reconnect and both CLI login flows as the `moi` service user. Until then, the plan's phone-level done condition is not verified.
+- Browser Clipboard API copy may be unavailable on direct-tailnet HTTP. The mobile paste field works without a secure context; Tailscale Serve HTTPS is the option for secure-context clipboard features.
 
 ## Phase 5 — Usage tracking
 

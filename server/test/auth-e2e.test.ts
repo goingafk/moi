@@ -1,7 +1,7 @@
 // Auth against a real server process: Bun's peer address, route wrappers, and
 // the WebSocket upgrade path, which unit tests of `authorizeRequest` can't see.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -156,6 +156,17 @@ describe('Tailscale mode', () => {
       })
     ).toBe('open')
   }, 30_000)
+
+  test('terminal WebSocket also requires identity', async () => {
+    const res = await fetch(`${server!.url}/api/terminals/ws?workspaceId=x&terminalId=y`)
+    expect(res.status).toBe(401)
+    await res.arrayBuffer()
+    const allowed = await fetch(`${server!.url}/api/terminals/ws?workspaceId=x&terminalId=y`, {
+      headers: serveHeaders(ALLOWED)
+    })
+    expect(allowed.status).toBe(404)
+    await allowed.arrayBuffer()
+  })
 })
 
 describe('auth off', () => {
@@ -180,6 +191,28 @@ describe('auth off', () => {
     await res.arrayBuffer()
     expect(await tryWebSocket(server!.url, serveHeaders(ALLOWED))).toBe('rejected')
   }, 30_000)
+
+  test('terminal WebSocket is disabled when auth is off', async () => {
+    const res = await fetch(`${server!.url}/api/terminals/ws?workspaceId=x&terminalId=y`)
+    expect(res.status).toBe(403)
+    await res.arrayBuffer()
+  })
+
+  test('terminal HTTP API is disabled when auth is off', async () => {
+    const dataDir = join(home, 'moi-data')
+    await mkdir(dataDir, { recursive: true })
+    await Bun.write(
+      join(dataDir, 'workspaces.json'),
+      JSON.stringify([
+        { id: 'terminal-test', path: home, addedAt: new Date().toISOString(), type: 'claude-code' }
+      ])
+    )
+    for (const method of ['GET', 'POST']) {
+      const res = await fetch(`${server!.url}/api/workspaces/terminal-test/terminals`, { method })
+      expect(res.status).toBe(403)
+      await res.arrayBuffer()
+    }
+  })
 })
 
 test('auth off refuses to start on a non-loopback HOST', async () => {

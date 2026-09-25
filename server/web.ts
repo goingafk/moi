@@ -37,9 +37,11 @@ import {
 import { startServiceLogMaintenance } from './service'
 import { distShell, prebuilt } from './static'
 import { renderStatus } from './status'
+import { attachTerminal, getTerminal } from './terminal'
 import { serveVendorEmojibase, serveVendorReact } from './vendor'
 
-type WsData = { channel: 'chat' | 'events'; workspaceId: string }
+type WsData = { channel: 'chat' | 'events' | 'terminal'; workspaceId: string; terminalId?: string }
+const terminalAttachments = new Map<object, ReturnType<typeof attachTerminal>>()
 
 function isClientMessage(value: unknown): value is ClientMessage {
   if (typeof value !== 'object' || value === null || !('type' in value)) return false
@@ -177,7 +179,23 @@ export const app = Bun.serve<WsData>({
     // happens in-handler via the route's `server` argument.
     '/api/workspaces/ws': withAuth((req: Request, server: Bun.Server<WsData>) =>
       upgrade(server, req, { channel: 'events', workspaceId: '' })
-    )
+    ),
+
+    '/api/terminals/ws': withAuth(async (req: Request, server: Bun.Server<WsData>) => {
+      if (getAuthPolicy().mode === 'off')
+        return new Response('Terminals require authentication', { status: 403 })
+      const url = new URL(req.url)
+      const workspaceId = url.searchParams.get('workspaceId') ?? ''
+      const terminalId = url.searchParams.get('terminalId') ?? ''
+      if (
+        !workspaceId ||
+        !terminalId ||
+        !(await getWorkspace(workspaceId)) ||
+        !(await getTerminal(workspaceId, terminalId))
+      )
+        return new Response('Terminal not found', { status: 404 })
+      return upgrade(server, req, { channel: 'terminal', workspaceId, terminalId })
+    })
   },
   // Anything not matched above (the whole HTTP API + prod static assets + 404)
   // is handled by Hono.
@@ -190,11 +208,50 @@ export const app = Bun.serve<WsData>({
         // harnesses so the client can light/clear spinners correctly even for
         // runs whose status transitions it missed while disconnected.
         sendToClient(ws, statusSnapshot())
+      } else if (ws.data.channel === 'terminal') {
+        try {
+          const process = attachTerminal(ws.data.terminalId!, chunk => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(chunk)
+          })
+          terminalAttachments.set(ws, process)
+          void process.exited.then(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.close()
+          })
+        } catch {
+          ws.close(1011, 'Could not attach terminal')
+        }
       } else {
         ws.subscribe(EVENTS_TOPIC)
       }
     },
     async message(ws, message) {
+      if (ws.data.channel === 'terminal') {
+        const terminal = terminalAttachments.get(ws)
+        if (!terminal) return
+        if (typeof message !== 'string') {
+          terminal.terminal?.write(message)
+          return
+        }
+        try {
+          const frame: unknown = JSON.parse(message)
+          if (
+            frame &&
+            typeof frame === 'object' &&
+            'type' in frame &&
+            frame.type === 'resize' &&
+            'cols' in frame &&
+            'rows' in frame &&
+            Number.isInteger(frame.cols) &&
+            Number.isInteger(frame.rows) &&
+            Number(frame.cols) >= 20 &&
+            Number(frame.cols) <= 500 &&
+            Number(frame.rows) >= 5 &&
+            Number(frame.rows) <= 200
+          )
+            terminal.terminal?.resize(Number(frame.cols), Number(frame.rows))
+        } catch {}
+        return
+      }
       if (ws.data.channel === 'events') {
         try {
           navigationRelay.receive(ws, JSON.parse(String(message)))
@@ -295,7 +352,10 @@ export const app = Bun.serve<WsData>({
       } catch {}
     },
     close(ws) {
-      if (ws.data.channel === 'chat') removeClient(ws)
+      if (ws.data.channel === 'terminal') {
+        terminalAttachments.get(ws)?.kill()
+        terminalAttachments.delete(ws)
+      } else if (ws.data.channel === 'chat') removeClient(ws)
       else {
         navigationRelay.remove(ws)
         ws.unsubscribe(EVENTS_TOPIC)

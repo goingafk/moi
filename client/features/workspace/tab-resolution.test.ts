@@ -44,6 +44,7 @@ describe('tabAvailable', () => {
     expect(tabAvailable('overview', [], [])).toBe(true)
     expect(tabAvailable('agent', [], [])).toBe(true)
     expect(tabAvailable('scratchpad', [], [])).toBe(true)
+    expect(tabAvailable('terminal', [], [])).toBe(true)
   })
 
   test('view and builder tabs track their backing lists', () => {
