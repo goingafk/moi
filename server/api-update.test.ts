@@ -1,12 +1,51 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import type { UpdateStatus } from '@/lib/types'
 
 import { api } from './api'
-import { __resetUpdateStateForTests, installUpdate, scheduleRestartForUpdate } from './update'
+import { resetAppConfig } from './app-config'
+import {
+  __resetUpdateStateForTests,
+  installUpdate,
+  SELF_UPDATE_DISABLED_MESSAGE,
+  scheduleRestartForUpdate
+} from './update'
+
+const previousSelfUpdate = process.env.MOI_SELF_UPDATE
+
+function setSelfUpdate(value: string | undefined): void {
+  if (value === undefined) delete process.env.MOI_SELF_UPDATE
+  else process.env.MOI_SELF_UPDATE = value
+  resetAppConfig()
+}
+
+afterEach(() => {
+  __resetUpdateStateForTests()
+  setSelfUpdate(previousSelfUpdate)
+})
+
+describe('update API with self-update off', () => {
+  beforeEach(() => setSelfUpdate('0'))
+
+  test('reports no update without touching the registry', async () => {
+    const response = await api.request('/api/update')
+    const status = (await response.json()) as UpdateStatus
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(status.availableVersion).toBeNull()
+  })
+
+  test('refuses to install', async () => {
+    const response = await api.request('/api/update', { method: 'POST' })
+
+    expect(response.status).toBe(409)
+    expect(await response.text()).toBe(SELF_UPDATE_DISABLED_MESSAGE)
+  })
+})
 
 describe('update API', () => {
-  afterEach(() => __resetUpdateStateForTests())
+  beforeEach(() => setSelfUpdate('1'))
 
   test('reports a source checkout as unavailable without touching the registry', async () => {
     const response = await api.request('/api/update')

@@ -6,12 +6,23 @@ import { realpathSync } from 'node:fs'
 
 import type { SessionActivity, UpdateResult, UpdateStatus } from '@/lib/types'
 
+import { getAppConfig } from './app-config'
 import { analyzeInstall } from './service'
 import type { InstallAnalysis } from './service'
 import { PACKAGE_ROOT, VERSION, isPrerelease } from './version'
 
 export const PACKAGE_NAME = 'moi-computer'
 export const UPDATE_RESTART_EXIT_CODE = 75
+
+// Every entry point (`moi update`, GET/POST /api/update) checks this before it
+// touches the registry. `PACKAGE_NAME` is upstream's package, so on a fork an
+// update would replace the fork — deployments opt in via `selfUpdate`.
+export function selfUpdateEnabled(): boolean {
+  return getAppConfig().selfUpdate
+}
+
+export const SELF_UPDATE_DISABLED_MESSAGE =
+  'Self-update is off for this install. Set MOI_SELF_UPDATE=1 or "selfUpdate": true in config.json to turn it on.'
 
 // Test seam: point at a local mock registry (`MOI_NPM_REGISTRY`).
 function registryBase(): string {

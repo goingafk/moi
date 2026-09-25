@@ -19,8 +19,17 @@ test('defaults apply when no config file exists', () => {
   expect(config).toEqual({
     cloudDemo: false,
     experiments: [],
-    demoInstallUrl: 'https://moi.computer'
+    demoInstallUrl: 'https://moi.computer',
+    selfUpdate: false
   })
+})
+
+test('self-update is opt-in from the config file or MOI_SELF_UPDATE', async () => {
+  const file = await configFile(JSON.stringify({ selfUpdate: true }))
+  expect(loadAppConfig(file, NO_ENV).selfUpdate).toBe(true)
+  expect(loadAppConfig(file, { MOI_SELF_UPDATE: '0' }).selfUpdate).toBe(false)
+  expect(loadAppConfig('/nonexistent', { MOI_SELF_UPDATE: '1' }).selfUpdate).toBe(true)
+  expect(loadAppConfig('/nonexistent', { MOI_SELF_UPDATE: 'yes' }).selfUpdate).toBe(false)
 })
 
 test('config file values override defaults', async () => {

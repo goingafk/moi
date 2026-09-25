@@ -94,6 +94,8 @@ import {
   isNewer,
   manualUpdateLines,
   runPackageManager,
+  SELF_UPDATE_DISABLED_MESSAGE,
+  selfUpdateEnabled,
   superviseServerUpdates,
   updateArgv
 } from './update'
@@ -2840,6 +2842,13 @@ const update = defineCommand({
     }
   },
   async run({ args }) {
+    // Checked first so a disabled install never contacts the registry. Exit 0
+    // under --check too: "nothing to update".
+    if (!selfUpdateEnabled()) {
+      console.log('\n' + pc.yellow('◆') + ` ${SELF_UPDATE_DISABLED_MESSAGE}\n`)
+      process.exit(0)
+    }
+
     // A checkout has no owning package manager — updating means `git pull`.
     const analysis = analyzeInstall()
     if (analysis.kind === 'checkout') {

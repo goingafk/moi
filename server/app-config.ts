@@ -22,12 +22,17 @@ export type AppConfig = {
   experiments: string[]
   // Link target for the cloud-demo promo dialog.
   demoInstallUrl: string
+  // npm self-update (`moi update`, the in-app update check and install). Off by
+  // default in this fork: the published `moi-computer` package is upstream, and
+  // installing it would replace the fork.
+  selfUpdate: boolean
 }
 
 const DEFAULTS: AppConfig = {
   cloudDemo: false,
   experiments: [],
-  demoInstallUrl: 'https://moi.computer'
+  demoInstallUrl: 'https://moi.computer',
+  selfUpdate: false
 }
 
 export const APP_CONFIG_FILE = join(DATA_DIR, 'config.json')
@@ -102,6 +107,10 @@ function fileValues(file: string): Partial<AppConfig> {
     if (typeof raw.demoInstallUrl === 'string') out.demoInstallUrl = raw.demoInstallUrl
     else warn('ignoring "demoInstallUrl" — expected a string')
   }
+  if (raw.selfUpdate !== undefined) {
+    if (typeof raw.selfUpdate === 'boolean') out.selfUpdate = raw.selfUpdate
+    else warn('ignoring "selfUpdate" — expected a boolean')
+  }
   return out
 }
 
@@ -114,7 +123,8 @@ export function loadAppConfig(
   const fromEnv: Partial<AppConfig> = {
     cloudDemo: parseBool(env.MOI_CLOUD_DEMO),
     experiments: parseList(env.MOI_EXPERIMENTS),
-    demoInstallUrl: parseString(env.MOI_DEMO_INSTALL_URL)
+    demoInstallUrl: parseString(env.MOI_DEMO_INSTALL_URL),
+    selfUpdate: parseBool(env.MOI_SELF_UPDATE)
   }
   const merged = { ...DEFAULTS, ...fromFile }
   for (const key of Object.keys(fromEnv) as (keyof AppConfig)[]) {

@@ -132,6 +132,7 @@ function runUpdate(args: string[] = [], envExtra: Record<string, string> = {}) {
       BUN_INSTALL: join(home, '.bun'),
       PATH: `${join(home, '.bun', 'bin')}:${process.env.PATH}`,
       MOI_NPM_REGISTRY: `http://127.0.0.1:${registry.port}`,
+      MOI_SELF_UPDATE: '1',
       NPM_CONFIG_REGISTRY: `http://127.0.0.1:${registry.port}`,
       NO_COLOR: '1',
       ...envExtra
@@ -200,6 +201,17 @@ describe('moi update (e2e)', () => {
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
     expect(code).toBe(2)
     expect(stderr).toContain('Could not reach the npm registry')
+  }, 60_000)
+
+  test('self-update off exits 0 without contacting the registry', async () => {
+    // An unreachable registry would exit 2 if the command got as far as a check.
+    const proc = runUpdate(['--check'], {
+      MOI_SELF_UPDATE: '0',
+      MOI_NPM_REGISTRY: 'http://127.0.0.1:1'
+    })
+    const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()])
+    expect(code).toBe(0)
+    expect(stdout).toContain('Self-update is off for this install')
   }, 60_000)
 
   test('updates a bun global install through bun and verifies the new bin', async () => {

@@ -14,6 +14,7 @@ import type {
   AppSettings,
   HarnessAvailability,
   SessionInfo,
+  UpdateStatus,
   UploadInfo,
   ViewBuilderInput,
   WorkspaceAgent,
@@ -101,8 +102,11 @@ import {
   installUpdate,
   restartPendingForUpdate,
   scheduleRestartForUpdate,
+  SELF_UPDATE_DISABLED_MESSAGE,
+  selfUpdateEnabled,
   updateInProgress
 } from './update'
+import { VERSION } from './version'
 
 // The resolved workspace is stashed on the context by `withWorkspace`, so every
 // `/api/workspaces/:id/*` handler can read it without re-querying the registry.
@@ -1147,10 +1151,14 @@ api.get('/api/config', c => c.json(clientAppConfig()))
 // unrelated cache on top of it.
 api.get('/api/update', async c => {
   c.header('Cache-Control', 'no-store')
+  if (!selfUpdateEnabled()) {
+    return c.json({ runningVersion: VERSION, availableVersion: null } satisfies UpdateStatus)
+  }
   return c.json(await getCachedUpdateStatus())
 })
 
 api.post('/api/update', async c => {
+  if (!selfUpdateEnabled()) return c.text(SELF_UPDATE_DISABLED_MESSAGE, 409)
   if (updateInProgress()) {
     return c.text(
       restartPendingForUpdate()
