@@ -177,6 +177,8 @@ async function startServer(envExtra: Record<string, string> = {}): Promise<Serve
       MOI_CONTROL_PORT: String(controlPort),
       MOI_NPM_REGISTRY: `http://127.0.0.1:${registry.port}`,
       MOI_SELF_UPDATE: '1',
+      // Direct loopback requests; auth itself is covered by auth-e2e.test.ts.
+      MOI_AUTH: 'off',
       NPM_CONFIG_REGISTRY: `http://127.0.0.1:${registry.port}`,
       MOI_UPDATE_BOOT_GRACE_MS: '0',
       MOI_UPDATE_CACHE_TTL_MS: String(TTL_MS),

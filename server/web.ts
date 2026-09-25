@@ -5,6 +5,7 @@ import { isMoiContext } from '@/lib/moi-context'
 import index from '../client/index.html'
 import { api } from './api'
 import { AttachmentUploadError } from './attachment-message'
+import { checkBindHost, getAuthPolicy, withAuth } from './auth'
 import { PORT } from './constants'
 import { control } from './control'
 import { EVENTS_TOPIC, publishEvent, setEventServer } from './events'
@@ -69,8 +70,16 @@ function isClientMessage(value: unknown): value is ClientMessage {
 
 // The SPA shell: prebuilt index.html in prod (served statically), the
 // live-bundled HTML import in dev (Bun.serve's bundler + HMR). The HTML import
-// stays here, in the routes table, so Bun's dev bundler keys off it.
-const shell = prebuilt ? distShell : index
+// stays here, in the routes table, so Bun's dev bundler keys off it. Bun serves
+// an HTML import (and its `/_bun/*` assets) itself, so in dev the shell skips
+// auth; it holds only the open-source client bundle, and every API and
+// WebSocket route below is behind `withAuth`.
+const shell = prebuilt ? withAuth(distShell) : index
+
+const HOST = process.env.HOST ?? '127.0.0.1'
+const bindCheck = checkBindHost(HOST, getAuthPolicy())
+if (!bindCheck.ok) throw new Error(bindCheck.error)
+if (bindCheck.warning) console.warn(`[moi] ${bindCheck.warning}`)
 
 // Authoritative activity snapshot across all harnesses. Sent on chat-socket
 // connect and re-broadcast periodically (below) so a spinner whose terminal
@@ -92,7 +101,7 @@ function upgrade(server: Upgradable, req: Request, data: WsData) {
 // HTTP API route is delegated to the Hono app (`./api`) via `fetch`.
 export const app = Bun.serve<WsData>({
   port: PORT,
-  hostname: process.env.HOST ?? '127.0.0.1',
+  hostname: HOST,
   // Agent startup/discovery can outlast Bun's 10s HTTP default. Allow the
   // harness's 30s RPC timeout to return an error before the socket closes.
   idleTimeout: 60,
@@ -102,17 +111,19 @@ export const app = Bun.serve<WsData>({
     // Plain-text server introspection — live sessions held in cache, connected
     // tabs, last message per thread. A quick peek into the process when a chat
     // seems stuck. Served as text/plain so curl/browser both show it raw.
-    '/status': () =>
-      new Response(renderStatus(), {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
-      }),
+    '/status': withAuth(
+      () =>
+        new Response(renderStatus(), {
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+        })
+    ),
 
     // Locally-vendored React ESM (offline; no CDN). The importmap in
     // client/index.html points here; the handler picks dev/prod per env.
-    '/vendor/react/*': (req: Request) => serveVendorReact(req),
+    '/vendor/react/*': withAuth((req: Request) => serveVendorReact(req)),
 
     // Vendored emojibase-data for the settings emoji picker (offline; no CDN).
-    '/vendor/emojibase/*': (req: Request) => serveVendorEmojibase(req),
+    '/vendor/emojibase/*': withAuth((req: Request) => serveVendorEmojibase(req)),
 
     // Client-side routes — serve the SPA shell.
     '/': shell,
@@ -122,18 +133,20 @@ export const app = Bun.serve<WsData>({
 
     // Chat websocket — app-wide (one per client, not per workspace). Each chat
     // frame carries its own workspaceId.
-    '/ws': (req: Request, server: Bun.Server<WsData>) =>
-      upgrade(server, req, { channel: 'chat', workspaceId: '' }),
+    '/ws': withAuth((req: Request, server: Bun.Server<WsData>) =>
+      upgrade(server, req, { channel: 'chat', workspaceId: '' })
+    ),
 
     // Live widget-event stream (build/refresh pushes). A static path, so Bun
     // routes it ahead of the Hono-served `/api/workspaces/:id`; the upgrade
     // happens in-handler via the route's `server` argument.
-    '/api/workspaces/ws': (req: Request, server: Bun.Server<WsData>) =>
+    '/api/workspaces/ws': withAuth((req: Request, server: Bun.Server<WsData>) =>
       upgrade(server, req, { channel: 'events', workspaceId: '' })
+    )
   },
   // Anything not matched above (the whole HTTP API + prod static assets + 404)
   // is handled by Hono.
-  fetch: req => api.fetch(req),
+  fetch: withAuth((req: Request) => api.fetch(req)),
   websocket: {
     open(ws) {
       if (ws.data.channel === 'chat') {

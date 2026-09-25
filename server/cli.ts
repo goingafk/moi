@@ -76,6 +76,7 @@ import {
   staleSkillNotice
 } from './skill-version'
 import { updateWorkspaceSkills } from './skill-update'
+import { describeAuth, getAuthPolicy } from './auth'
 import {
   ServiceError,
   analyzeInstall,
@@ -565,6 +566,7 @@ const start = defineCommand({
       process.exit(1)
     }
     console.log(`\n${pc.green('✓')} Server started on http://localhost:${PORT}`)
+    console.log(pc.dim(`  ${describeAuth(getAuthPolicy())}`))
     console.log(pc.dim('  Press Ctrl+C to stop\n'))
     // Stay alive as the server
   }
