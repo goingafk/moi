@@ -107,7 +107,7 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 ### Summary
 
 - Added per-chat `auto`, `ask-risky`, and `ask-all` modes, saved with per-user session settings. Claude and Codex default to `auto`; Ollama-backed Claude defaults to `ask-risky`. The composer can change a chat's mode and settings expose defaults, risk switches, and custom ask/allow patterns.
-- Added a shared classifier for paths (including symlink escapes), shell commands, network, Git, system operations, sensitive files, and unknown tools. `alwaysAsk` wins over `alwaysAllow`, then built-in rules.
+- Added a shared classifier for paths (including bare relative shell arguments and symlink escapes), shell commands, network, Git, system operations, sensitive files, and unknown tools. Unclassified executables ask by default. `alwaysAsk` wins over `alwaysAllow`, then built-in rules.
 - Claude's pre-tool hook and fallback permission callback now wait for browser decisions in ask modes. Codex app-server approval requests do the same; unknown threads are denied. Pending cards survive reconnect through the socket snapshot, and Stop denies outstanding approvals. Decisions are appended to a local audit file without raw command arguments.
 - Codex's `Ask all` is disabled: its app-server does not present every sandbox-allowed tool call for approval. See the harness notes for protocol details.
 

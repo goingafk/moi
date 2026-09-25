@@ -20,6 +20,44 @@ const SAFE: Risk = { level: 'safe', reason: 'No enabled risk rule matched' }
 const SHELL_TOOLS = new Set(['Bash', 'bash', 'shell', 'exec_command', 'commandExecution'])
 const NETWORK_TOOLS = /(?:web|fetch|search|http|browser)/i
 const WRITE_TOOLS = /(?:write|edit|patch|delete|move|rename)/i
+const READ_ONLY_SHELL = new Set([
+  'pwd',
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'stat',
+  'grep',
+  'rg',
+  'echo',
+  'printf',
+  'test',
+  'true',
+  'false'
+])
+const READ_ONLY_GIT = new Set(['status', 'log', 'diff', 'show'])
+const CLASSIFIED_SHELL = new Set([
+  'rm',
+  'rmdir',
+  'unlink',
+  'mv',
+  'curl',
+  'wget',
+  'ssh',
+  'scp',
+  'rsync',
+  'nc',
+  'sudo',
+  'su',
+  'kill',
+  'pkill',
+  'launchctl',
+  'systemctl',
+  'crontab',
+  'chmod',
+  'chown'
+])
 
 function existingRealpath(path: string): string {
   let current = path
@@ -128,7 +166,7 @@ export function classifyTool(request: ToolRequest, settings: PermissionSettings)
       (words[1] === 'clean' &&
         words.slice(2).some(word => /^-[a-z]*f/.test(word) || word === '--force')) ||
       (words[1] === 'branch' && words.includes('-D')) ||
-      (words[1] === 'checkout' && words.includes('--')) ||
+      (words[1] === 'checkout' && (words.includes('--') || words.includes('-f'))) ||
       (words[1] === 'restore' && !words.includes('--staged')) ||
       (words[1] === 'commit' && words.includes('--amend')) ||
       (words[1] === 'stash' && ['drop', 'clear'].includes(words[2] ?? '')))
@@ -156,16 +194,18 @@ export function classifyTool(request: ToolRequest, settings: PermissionSettings)
       )
   )
     return risky('system', 'Changes permissions outside this workspace')!
+  if (
+    words.slice(1).some(word => word.startsWith('-') && word.includes('/') && !word.includes('='))
+  )
+    return risky('unparseableShell', 'Option contains a path that cannot be normalized') ?? SAFE
+  // A bare relative argument can itself be a symlink out of the workspace.
+  // Looking only for '/' or './' misses e.g. `cat linked/file` and `cat linked`.
   const argumentsWithPaths = words
     .slice(1)
-    .filter(
-      word =>
-        word.startsWith('/') ||
-        word.startsWith('./') ||
-        word.startsWith('../') ||
-        word.startsWith('~/') ||
-        /(^|\/)\.env[^/]*$/.test(word)
+    .map(word =>
+      word.startsWith('--') && word.includes('=') ? word.slice(word.indexOf('=') + 1) : word
     )
+    .filter(word => word && !word.startsWith('-') && !/^[a-z][a-z0-9+.-]*:\/\//i.test(word))
   for (const path of argumentsWithPaths) {
     const full = expandPath(path, request.cwd)
     if (
@@ -177,5 +217,37 @@ export function classifyTool(request: ToolRequest, settings: PermissionSettings)
     if (settings.rules.outsideProject && !inside(request.workspaceRoot, full))
       return risky('outsideProject', 'Path is outside this workspace')!
   }
+  const knownGit =
+    executable === 'git' &&
+    (READ_ONLY_GIT.has(words[1] ?? '') ||
+      [
+        'push',
+        'rebase',
+        'reset',
+        'clean',
+        'branch',
+        'checkout',
+        'restore',
+        'commit',
+        'stash',
+        'rm'
+      ].includes(words[1] ?? ''))
+  const knownPackageInstall =
+    ['bun', 'npm', 'pnpm', 'yarn', 'pip', 'brew', 'cargo'].includes(executable) &&
+    words.some(word => ['add', 'install'].includes(word))
+  const knownFind =
+    executable === 'find' &&
+    !words.some(word => ['-exec', '-execdir', '-ok', '-okdir'].includes(word))
+  if (
+    settings.rules.unparseableShell &&
+    !(
+      READ_ONLY_SHELL.has(executable) ||
+      CLASSIFIED_SHELL.has(executable) ||
+      knownGit ||
+      knownPackageInstall ||
+      knownFind
+    )
+  )
+    return risky('unparseableShell', 'Command is not in the known-safe shell set')!
   return SAFE
 }

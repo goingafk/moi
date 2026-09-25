@@ -42,6 +42,10 @@ test('classifies shell commands, network tools, deletes, and unsafe Git', () => 
   expect(classifyTool({ ...base, command: 'pwd' }, settings).level).toBe('safe')
   expect(classifyTool({ ...base, tool: 'WebFetch' }, settings).rule).toBe('network')
   expect(classifyTool({ ...base, command: 'cat .env.local' }, settings).rule).toBe('sensitiveFiles')
+  expect(classifyTool({ ...base, command: 'python -c "print(1)"' }, settings).rule).toBe(
+    'unparseableShell'
+  )
+  expect(classifyTool({ ...base, command: 'git status' }, settings).level).toBe('safe')
 })
 
 test('resolves dot-dot and symlink path escapes before allowing a tool', async () => {
@@ -62,6 +66,12 @@ test('resolves dot-dot and symlink path escapes before allowing a tool', async (
       'outsideProject'
     )
     expect(classifyTool({ ...base, paths: ['linked/file.txt'] }, settings).rule).toBe(
+      'outsideProject'
+    )
+    expect(
+      classifyTool({ ...base, tool: 'Bash', command: 'cat linked/file.txt' }, settings).rule
+    ).toBe('outsideProject')
+    expect(classifyTool({ ...base, tool: 'Bash', command: 'cat linked' }, settings).rule).toBe(
       'outsideProject'
     )
     expect(classifyTool({ ...base, paths: ['src/file.txt'] }, settings).level).toBe('safe')
