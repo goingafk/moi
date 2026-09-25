@@ -127,6 +127,8 @@ Then open the workspace's **Terminal** tab and create a terminal. It runs as the
 
 The Terminal tab offers login-command shortcuts that fill the input field, so review the command before pressing **Send text**. The installed Codex CLI supports `codex login --device-auth`; follow its device URL/code on your MacBook or phone. The installed Claude CLI supports `claude auth login`; open the URL it prints on your own device and paste a code into the terminal if prompted. If the CLI tries to open a browser inside the LXC, use the printed URL instead. Both logins belong to the service user, not root.
 
+If an older checkout reports `open terminal failed: terminal does not support clear`, fetch the latest Phase 4 branch, rebuild, and restart moi. Current code supplies `TERM=xterm-256color` to tmux explicitly. If it still fails, check `runuser -l moi -c 'infocmp xterm-256color'` inside the LXC; install the container's terminfo package if that entry is missing.
+
 For this direct HTTP Tailscale mode, browser clipboard APIs can be unavailable because the page is not a secure context. The terminal's **Send text** field accepts normal paste on mobile; the copy button needs a browser that exposes the Clipboard API. The stricter HTTPS Serve mode below enables secure-context features.
 
 ## Alternative: HTTPS through Tailscale Serve

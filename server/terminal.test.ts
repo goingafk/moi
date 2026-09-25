@@ -11,8 +11,17 @@ import {
   killTerminal,
   listTerminals,
   renameTerminal,
-  setTerminalStoreDir
+  setTerminalStoreDir,
+  tmuxEnvironment
 } from './terminal'
+
+test('tmux uses browser terminal capabilities under a non-interactive service', () => {
+  expect(tmuxEnvironment({ TERM: 'dumb', MOI_SERVER: '1' })).toEqual({
+    TERM: 'xterm-256color',
+    MOI_SERVER: '1'
+  })
+  expect(tmuxEnvironment({ MOI_SERVER: '1' }).TERM).toBe('xterm-256color')
+})
 
 test('Bun native PTY accepts input and delivers output', async () => {
   let output = ''

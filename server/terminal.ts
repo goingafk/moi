@@ -15,6 +15,13 @@ type TerminalStore = { terminals: TerminalInfo[] }
 let storeDir = DATA_DIR
 let config: Conf<TerminalStore> | null = null
 
+// A systemd service has no real terminal and may inherit TERM=dumb or no
+// TERM at all. The attached browser is xterm.js, so tmux must see its
+// capabilities, not the service manager's non-interactive environment.
+export function tmuxEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, TERM: 'xterm-256color' }
+}
+
 export function setTerminalStoreDir(dir: string): void {
   storeDir = dir
   config = null
@@ -40,7 +47,8 @@ async function tmux(...args: string[]): Promise<{ code: number; output: string }
     proc = Bun.spawn(['tmux', '-L', 'moi', ...args], {
       stdin: 'ignore',
       stdout: 'pipe',
-      stderr: 'pipe'
+      stderr: 'pipe',
+      env: tmuxEnvironment()
     })
   } catch {
     throw new Error('tmux is not installed. Install tmux on the moi server first.')
@@ -142,6 +150,7 @@ export async function killTerminal(workspaceId: string, id: string): Promise<boo
 export function attachTerminal(id: string, onData: (chunk: Uint8Array) => void) {
   return Bun.spawn(['tmux', '-L', 'moi', 'attach-session', '-t', `=${sessionName(id)}`], {
     cwd: storeDir,
+    env: tmuxEnvironment(),
     terminal: { cols: 80, rows: 24, data: (_terminal, chunk) => onData(chunk) }
   })
 }

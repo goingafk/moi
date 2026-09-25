@@ -152,6 +152,8 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 ### Open items
 
 - A real tmux detach/reattach test is present but skipped on this Mac because tmux is not installed. Run it on the LXC after installing tmux, then test a phone disconnect/reconnect and both CLI login flows as the `moi` service user. Until then, the plan's phone-level done condition is not verified.
+- Container follow-up: tmux reported `terminal does not support clear` when the service opened a terminal. The attachment and control commands now set `TERM=xterm-256color` explicitly; this is unit-tested, but the owner's LXC must confirm the live fix after redeployment.
+- Follow-up verification: `bun test` passed with 1,805 pass, 5 skip, 0 fail; typecheck and lint passed (the same 9 warnings), and format check passed.
 - Browser Clipboard API copy may be unavailable on direct-tailnet HTTP. The mobile paste field works without a secure context; Tailscale Serve HTTPS is the option for secure-context clipboard features.
 
 ## Phase 5 — Usage tracking
