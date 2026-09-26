@@ -16,46 +16,46 @@ It must print the IP you intend to use for moi. Reaching the container through a
 
 ## 2. Install the current fork branch from source
 
-The direct-tailnet code began on `fork/phase-1-security`; later phases build on it. Use the current branch, `fork/phase-4-web-terminal`, for multi-agent chats, permissions, and the terminal. From the development machine, push that branch before updating the container:
+Each fork phase lives on its own branch, stacked on the previous one. Deploy the newest phase branch; it is currently `fork/phase-6-memory` (see `docs/fork/PROGRESS.md`). The commands below use a `BRANCH` variable so only that line changes between phases. From the development machine, push the branch before updating the container:
 
 ```sh
-git push origin fork/phase-4-web-terminal
+BRANCH=fork/phase-6-memory
+git push -u origin "$BRANCH"
 ```
 
-Then on the container (Linux, systemd):
+For a fresh install on the container (Linux, systemd):
 
 ```sh
+BRANCH=fork/phase-6-memory
 curl -fsSL https://bun.sh/install | bash
 git clone https://github.com/goingafk/moi.git ~/moi
 cd ~/moi
-git fetch origin
-git switch --track origin/fork/phase-4-web-terminal
+git switch --track "origin/$BRANCH"
 bun install
 bun run build:client
 bun link
 ```
 
-For an existing checkout, skip `git clone`, then fetch and switch. If the local branch already exists, use `git switch fork/phase-4-web-terminal` followed by `git pull --ff-only` instead of `git switch --track`. After later pulls, rerun `bun run build:client`. Install and log in to the agent CLI you plan to use as the same OS user that runs moi.
-
-After a client-only update on an existing checkout, rebuild as that checkout's owner and restart the service. A browser refresh is also required to load the new bundle. For a system-level unit named `moi.service` instead of the user unit below, use `systemctl restart moi` as root.
+Install and log in to the agent CLIs you plan to use as the same OS user that runs moi.
 
 ### Updating the existing `/home/moi/moi` LXC checkout
 
 Run these as root in the LXC, but run Git and Bun as the `moi` service user. First inspect for local edits; do not discard them:
 
 ```sh
+BRANCH=fork/phase-6-memory
 runuser -l moi -c 'cd /home/moi/moi && git status --short --branch'
-apt-get update
-apt-get install tmux
 runuser -l moi -c 'cd /home/moi/moi && git fetch origin'
-runuser -l moi -c 'cd /home/moi/moi && git switch --track origin/fork/phase-4-web-terminal'
+runuser -l moi -c "cd /home/moi/moi && (git switch $BRANCH 2>/dev/null || git switch --track origin/$BRANCH) && git pull --ff-only"
 runuser -l moi -c 'cd /home/moi/moi && /home/moi/.bun/bin/bun install --frozen-lockfile'
 runuser -l moi -c 'cd /home/moi/moi && /home/moi/.bun/bin/bun run build:client'
 ```
 
-If the new branch already exists locally, replace the `git switch --track` line with `git switch fork/phase-4-web-terminal` and `git pull --ff-only origin fork/phase-4-web-terminal`, both as `moi`. If the build reports `EACCES` on `dist`, check `ls -ld /home/moi/moi/dist`; only if that exact directory is root-owned, run `chown -R moi:moi /home/moi/moi/dist` as root and retry the build. Keep the existing `~moi/.local/share/moi/config.json`: the auth mode, server tailnet IP, and currently allowed MacBook IP do not need to change for Phases 3–4.
+The switch line works whether or not the branch already exists locally. If the build reports `EACCES` on `dist`, check `ls -ld /home/moi/moi/dist`; only if that exact directory is root-owned, run `chown -R moi:moi /home/moi/moi/dist` as root and retry the build. Keep the existing `~moi/.local/share/moi/config.json`: the auth mode, server tailnet IP, and allowed MacBook IP carry over between phases. The web terminal (Phase 4+) also needs `tmux`; see section 6.
 
-Restart the service using the same scope in which it was installed: `systemctl restart moi` for a system unit, or `systemctl --user restart moi` from a real `moi` user login for a user unit. Do not run `systemctl --user` in a root shell without that user's session bus. After restart, refresh the browser so it loads the new client bundle.
+Restart the service using the same scope in which it was installed: `systemctl restart moi` for a system unit, or `systemctl --user restart moi` from a real `moi` user login for a user unit. Do not run `systemctl --user` in a root shell without that user's session bus. Check `journalctl -u moi -n 50` (add `--user` for a user unit) for `auth: direct Tailscale IP — 1 allowed device`, then refresh the browser so it loads the new client bundle.
+
+Phase 6 adds an optional shared memory service that runs next to moi on the same container; see `docs/fork/memory.md`.
 
 ## 3. Configure direct-tailnet access
 
