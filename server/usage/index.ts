@@ -1,6 +1,8 @@
+import type { MemoryUsage } from '@/lib/memory'
 import type { OllamaServer, UsageOverview, UsageSnapshot } from '@/lib/types'
 
 import { getAppSettings } from '../app-settings'
+import { memoryApi, memoryServiceUrl } from '../memory/client'
 import { cachedOllamaModels } from '../ollama/discovery'
 import {
   type ClaudeRateLimitInfo,
@@ -95,8 +97,39 @@ export async function recordJevUsage(inputTokens: number, outputTokens: number):
   ])
 }
 
+// Jev calls made by the memory service (Phase 6). The service keeps cumulative
+// token totals; moi prices them here, next to the local router's spend.
+const MEMORY_USAGE_STALE_MS = 15 * 60_000
+
+export async function refreshMemoryJevUsage(): Promise<void> {
+  if (!memoryServiceUrl()) return
+  let usage: MemoryUsage
+  try {
+    usage = await memoryApi.usage(2_000)
+  } catch {
+    return // keep the last observation; it goes stale on its own
+  }
+  if (usage.jev.requests === 0) return
+  const observedAt = new Date().toISOString()
+  await saveUsageSnapshots([
+    {
+      id: 'jev:memory-service',
+      provider: 'jev',
+      label: 'Jev · memory',
+      kind: 'spend',
+      status: 'available',
+      spentUsd: (usage.jev.inputTokens / 1_000_000) * JEV_INPUT_USD_PER_MILLION,
+      inputTokens: usage.jev.inputTokens,
+      outputTokens: usage.jev.outputTokens,
+      observedAt,
+      staleAt: new Date(Date.parse(observedAt) + MEMORY_USAGE_STALE_MS).toISOString(),
+      detail: `Memory scoring · ${usage.jev.requests} requests`
+    }
+  ])
+}
+
 export async function usageOverview(refresh = false): Promise<UsageOverview> {
-  if (refresh) await refreshOllamaUsage()
+  if (refresh) await Promise.all([refreshOllamaUsage(), refreshMemoryJevUsage()])
   const generatedAt = new Date().toISOString()
   const snapshots = await getUsageSnapshots()
   const placeholders: UsageSnapshot[] = [

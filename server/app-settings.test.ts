@@ -51,7 +51,8 @@ describe('app settings API', () => {
       modelMode: 'manual',
       ollamaServers: [],
       localMcpServers: [],
-      permissions
+      permissions,
+      memory: { url: null }
     })
   })
 
@@ -70,7 +71,8 @@ describe('app settings API', () => {
       modelMode: 'manual',
       ollamaServers: [],
       localMcpServers: [],
-      permissions
+      permissions,
+      memory: { url: null }
     })
 
     const readBack = await api.request('/api/settings')
@@ -85,7 +87,8 @@ describe('app settings API', () => {
           modelMode: 'manual',
           ollamaServers: [],
           localMcpServers: [],
-          permissions
+          permissions,
+          memory: { url: null }
         }
       }
     ])
@@ -110,8 +113,32 @@ describe('app settings API', () => {
       modelMode: 'manual',
       ollamaServers: [],
       localMcpServers: [],
-      permissions
+      permissions,
+      memory: { url: null }
     })
+  })
+
+  test('stores the memory service URL and rejects anything but a bare http(s) origin', async () => {
+    const patch = (memory: unknown) =>
+      api.request('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memory })
+      })
+    const good = await patch({ url: 'http://100.100.1.1:13380' })
+    expect(good.status).toBe(200)
+    expect(((await good.json()) as AppSettings).memory).toEqual({ url: 'http://100.100.1.1:13380' })
+    for (const memory of [
+      { url: 'file:///tmp/memory' },
+      { url: 'http://user:secret@100.100.1.1:13380' },
+      { url: 'http://100.100.1.1:13380/v1/digest' },
+      { url: 'not a url' },
+      { url: 'http://x', extra: true },
+      {}
+    ]) {
+      expect((await patch(memory)).status).toBe(400)
+    }
+    expect(((await (await patch({ url: null })).json()) as AppSettings).memory.url).toBeNull()
   })
 
   test('stores Ollama servers and rejects unsafe or duplicate origins', async () => {

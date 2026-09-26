@@ -14,9 +14,11 @@ import { applyEnvChanged } from './env-apply'
 import { callFunctionEphemeral, parseFunctionPath } from './functions'
 import { processIcon } from './icon'
 import { loadLayout, saveLayout } from './layout'
+import { addMemory } from './memory'
 import { publishEvent } from './events'
 import { findWorkspaceForPath, listWorkspaces, registerWorkspace } from './registry'
 import { executeScratchOp } from './scratchpad-executor'
+import { getSessionConfig } from './session-config'
 import { readScratchpadImage, readScratchpadShapes } from './scratchpad'
 import { relayScratchOp } from './scratchpad-relay'
 import { broadcastAll } from './state'
@@ -362,6 +364,33 @@ export const control = Bun.serve({
           if (!match) return
           applyEnvChanged(match)
           ws.send(JSON.stringify({ ok: true }))
+          return
+        }
+
+        if (data.type === 'memory:add') {
+          // Shared memory (Phase 6): the workspace resolves the project; a
+          // session id, when given, supplies the chat's agent/model provenance.
+          const match = await resolveWorkspace(ws, data.path)
+          if (!match) return
+          const sessionId = typeof data.sessionId === 'string' ? data.sessionId : undefined
+          const session = sessionId ? await getSessionConfig(match.path, sessionId) : null
+          try {
+            const result = await addMemory({
+              workspacePath: match.path,
+              text: String(data.text ?? ''),
+              scope: data.scope,
+              sessionId,
+              agent: session?.agent,
+              model: session?.model
+            })
+            ws.send(JSON.stringify({ ok: true, outcome: result.outcome, id: result.entry.id }))
+          } catch (error) {
+            ws.send(
+              JSON.stringify({
+                error: error instanceof Error ? error.message : 'Could not save the memory'
+              })
+            )
+          }
           return
         }
 

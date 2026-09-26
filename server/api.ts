@@ -36,6 +36,7 @@ import { callFunction, parseFunctionPath } from './functions'
 import { processIcon } from './icon'
 import { getWorkspacePreview, loadLayout, mergeLayoutForSave, saveLayout } from './layout'
 import { listModelCatalog } from './model-catalog'
+import { memoryRoutes } from './memory/routes'
 import { localMcpConfig } from './ollama/mcp'
 import {
   getAppletThumbnailRecords,
@@ -1311,6 +1312,9 @@ api.patch('/api/settings', async c => {
   publishEvent({ type: 'settings:updated', settings })
   return c.json(settings)
 })
+
+// Shared memory (Phase 6): proxy to the memory service for the Memory page.
+api.route('/', memoryRoutes)
 
 // Everything else: in production, serve the prebuilt client from `dist/` via
 // Hono's static handler (mime types, traversal-safe, optional precompression).

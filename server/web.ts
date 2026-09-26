@@ -34,6 +34,7 @@ import {
   removeClient,
   sendToClient
 } from './state'
+import { withMemoryDigest } from './memory'
 import { startServiceLogMaintenance } from './service'
 import { distShell, prebuilt } from './static'
 import { renderStatus } from './status'
@@ -293,6 +294,14 @@ export const app = Bun.serve<WsData>({
               })
             }
           }
+          // Shared memory digest (Phase 6): bounded by a short timeout and
+          // skipped on any failure, so it can delay a send but never block it.
+          const context = await withMemoryDigest(data.context, {
+            workspacePath: workspace.path,
+            sessionId: data.sessionId,
+            isNew: data.isNew,
+            content: data.content
+          })
           // Harnesses ignore fields they don't support (see SendMessageInput).
           // Their failures surface internally; attachment resolution happens
           // before a harness owns the send, so surface that one here.
@@ -312,7 +321,7 @@ export const app = Bun.serve<WsData>({
               effort: data.effort,
               fastMode: data.fastMode,
               stream: data.stream,
-              context: data.context,
+              context,
               agentId: workspace.agentId
             })
             .catch(error => {

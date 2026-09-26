@@ -21,7 +21,8 @@ const API_UPDATABLE = [
   'modelMode',
   'ollamaServers',
   'localMcpServers',
-  'permissions'
+  'permissions',
+  'memory'
 ] as const satisfies readonly (keyof AppSettings)[]
 
 // Pick the API-updatable fields out of an untrusted body; unknown keys are
@@ -109,6 +110,15 @@ function store(): Conf<AppSettings> {
           alwaysAllow: { type: 'array', items: { type: 'string', minLength: 1 } }
         },
         required: ['defaults', 'rules', 'alwaysAsk', 'alwaysAllow'],
+        additionalProperties: false
+      },
+      memory: {
+        type: 'object',
+        default: { url: null },
+        properties: {
+          url: { type: ['string', 'null'], pattern: '^https?://[^\\s/@]+/?$' }
+        },
+        required: ['url'],
         additionalProperties: false
       },
       ollamaServers: {

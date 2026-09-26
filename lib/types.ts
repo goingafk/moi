@@ -397,6 +397,13 @@ export type AppSettings = {
   ollamaServers: OllamaServer[]
   localMcpServers: string[]
   permissions: PermissionSettings
+  // Shared memory service (Phase 6). `url: null` turns memory off in moi.
+  memory: MemorySettings
+}
+
+export type MemorySettings = {
+  // Base URL of the memory service, e.g. `http://100.x.y.z:13380`.
+  url: string | null
 }
 
 export type OllamaServer = {

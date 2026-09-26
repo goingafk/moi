@@ -2381,6 +2381,60 @@ const debug = defineCommand({
   subCommands: { logs: debugLogs }
 })
 
+// ---- shared memory -----------------------------------------------------------
+
+// `moi memory add "<fact>"`: save a durable fact to the shared memory service
+// (Phase 6) for this workspace's project, every project (`--scope global`), or
+// one chat (`--scope session --session <id>`). The server resolves the project
+// and provenance, then forwards to the service; see docs/fork/memory.md.
+const memoryAdd = defineCommand({
+  meta: { name: 'add', description: 'Save a fact to shared memory' },
+  args: {
+    text: { type: 'positional', required: true, description: 'The fact, in plain words' },
+    scope: {
+      type: 'string',
+      default: 'project',
+      description: 'project (default), global, or session'
+    },
+    session: { type: 'string', description: 'Chat session id (required for --scope session)' },
+    dir: dirArg
+  },
+  run({ args }) {
+    const scope = args.scope
+    if (scope !== 'project' && scope !== 'global' && scope !== 'session') {
+      console.error('\n' + pc.red('✗') + ' --scope must be project, global, or session.\n')
+      process.exit(1)
+    }
+    if (scope === 'session' && !args.session) {
+      console.error('\n' + pc.red('✗') + ' --scope session needs --session <id>.\n')
+      process.exit(1)
+    }
+    const path = resolve(args.dir)
+    sendControl(
+      path,
+      { type: 'memory:add', path, text: args.text, scope, sessionId: args.session },
+      res => {
+        const outcome = String(res.outcome ?? 'added')
+        const label =
+          outcome === 'duplicate'
+            ? 'already remembered (reinforced)'
+            : outcome === 'superseded'
+              ? 'remembered (replaced an older, contradicting fact)'
+              : 'remembered'
+        console.log('\n' + pc.green('✓') + ` ${label} ` + pc.dim(String(res.id ?? '')) + '\n')
+      }
+    )
+  }
+})
+
+const memory = defineCommand({
+  meta: {
+    name: 'memory',
+    description: 'Shared memory across agents and machines — `moi memory add "<fact>"`'
+  },
+  subCommands: { add: memoryAdd }
+})
+
 // ---- workspace tabs ----------------------------------------------------------
 
 // The listing behind `moi tabs`: every tab (static + views), one per row, the
@@ -3068,6 +3122,7 @@ const workspaceCommands = {
   skill,
   tabs,
   navigate,
+  memory,
   'ui-components': uiComponents
 }
 
