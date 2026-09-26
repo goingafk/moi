@@ -248,6 +248,8 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 - Live, on this MacBook with isolated data: Claude Code 2.1.282 saved a fact through the real MCP client, and Codex 0.153.4 recalled that same fact and saved its own (cross-agent). In a production moi build, `moi memory add` stored a project fact (an SSH remote normalised to `github.com/goingafk/memory-e2e`) and a global fact. A real Claude chat in that workspace then answered from the injected digest ("deploys with `make ship` … British spelling"). Temporary servers and data were removed afterwards.
 - Verified against primary docs: TypeSafe System One API (request, response and error shapes), Ollama `/api/embed`, MCP Streamable HTTP (2025-11-25), `claude mcp add --transport http`, `codex mcp add --url`, and Codex's `default_tools_approval_mode`. Details are in the service's `NOTES.md`.
 
+- LXC deployment (2026-09-26): the service runs as the system unit `memory-service.service` (`User=moi`), bound to `100.73.80.77:13380` with 2 allowed devices, and the TypeSafe key is in the `0600` file store. Health checks passed from the LXC and the MacBook. moi was connected through Settings → Memory, and a fact was added. A manual `POST /v1/sweep` made the first live Jev call, which scored that fact at relevance 0.96 and confidence 0.89 (`decisions.jsonl`: `added`, then `scored`), with 0 failures.
+
 ### Decisions
 
 - Owner-approved: separate repo on the LXC; hybrid FTS5 + embeddings; a rolling recent-work log as the eviction context; Laya built against fakes; device-IP auth; research-based scoring (RRF, ACT-R, importance separate from relevance, archive not delete).
@@ -258,8 +260,8 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Open items
 
-- **Owner deployment:** push both repos (the memory-service GitHub repo does not exist yet), deploy the service on the LXC, set the TypeSafe key, and put the LXC's own IP in its `allowedIps`. Then set the address in Settings → Memory. The plan's done condition, a Codex fact appearing in a Claude chat _from another machine_, needs this deployment. The same-machine version was verified.
-- **Jev scoring is unverified live:** no TypeSafe key was used during development. After deploying, add a few facts, send some messages, run `POST /v1/sweep`, and check `decisions.jsonl` for `scored` events and the _Jev · memory_ usage row.
+- Deployment and live Jev scoring are done (see Verification). Still open is the plan's cross-machine done condition: save a fact from a Codex chat on one machine (e.g. MacBook MCP registration) and see it in a Claude chat on the LXC. Also confirm the _Jev · memory_ usage row after a refresh.
+- The service repo is private. The LXC clones it with a read-only deploy key (`~moi/.ssh/memory_service_deploy`, SSH host alias `github-memory-service`); pull updates with `runuser -l moi -c 'cd ~/memory-service && git pull'`, then `systemctl restart memory-service`. The service README still documents a user-level unit; the LXC uses the system unit `memory-service.service` (`User=moi`).
 - **No embedding model** on the Ollama server (`gemma4:26b` and `qwen3.8:27b` only). Pull one (e.g. `nomic-embed-text`) to enable paraphrase matching; until then search is keyword-only.
 - **Eviction over time** is covered by tests with a controlled clock, not observed live. The thresholds are defaults to tune from `decisions.jsonl`.
 - **The Settings → Memory page was not exercised in a browser:** no browser automation was available in this session. It typechecks and builds, and its proxy routes are tested. Check it by hand on first deployment.
