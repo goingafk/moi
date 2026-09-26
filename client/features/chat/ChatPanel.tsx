@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
-import { IconChevronDown, IconChevronsRight, IconX } from '@tabler/icons-react'
+import { IconChevronDown, IconChevronsRight, IconRoute, IconX } from '@tabler/icons-react'
 
 import { canSubmitComposerAction, focusComposer } from '@/client/components/shared/Composer'
 import { AgentBlobatar } from '@/client/components/shared/AgentBlobatar'
@@ -31,6 +31,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/client/components/ui/
 import { cn } from '@/client/lib/cn'
 import type { AgentAvailability } from '@/client/lib/agent-availability'
 import { useUiStore } from '@/client/store/ui'
+import { useSaveSessionConfig } from './sessions/api'
+import { useSelectedSession } from './sessions/useSelectedSession'
+import { useModelCatalog } from '../workspace/api'
+import { routeContinuation, routeOverridePatch } from './messages/route-actions'
 
 export type ViewBuilderChatDraft = {
   sessionId: string
@@ -221,7 +225,11 @@ export function ChatPanel({
             {showTranscript &&
               timeline.map(item =>
                 item.kind === 'notice' ? (
-                  <ChatNoticeRow key={`notice:${item.notice.id}`} notice={item.notice} />
+                  <ChatNoticeRow
+                    key={`notice:${item.notice.id}`}
+                    notice={item.notice}
+                    sessionId={effectiveSessionId}
+                  />
                 ) : (
                   <TurnView
                     key={item.turn.id}
@@ -299,15 +307,72 @@ export function ChatPanel({
   )
 }
 
-type ChatNoticeRowProps = { notice: SystemNotice }
+type ChatNoticeRowProps = { notice: SystemNotice; sessionId?: string | null }
 
 // A quiet, centered one-liner marking a session event (context compacted,
 // model changed) at its place in the transcript. Kinds without designed copy
 // render nothing (see chatNoticeLabel). Exported for the /dev/chat-states
 // catalog.
-export function ChatNoticeRow({ notice }: ChatNoticeRowProps) {
+export function ChatNoticeRow({ notice, sessionId }: ChatNoticeRowProps) {
+  const workspaceId = useWorkspaceId()
+  const saveConfig = useSaveSessionConfig(workspaceId)
+  const catalog = useModelCatalog(workspaceId).data ?? []
+  const [, selectSession] = useSelectedSession()
+  const setDraft = useUiStore(state => state.setComposerDraft)
+  const setModel = useUiStore(state => state.setModelSelection)
+  const setRouting = useUiStore(state => state.setRoutingSelection)
   const label = chatNoticeLabel(notice)
   if (!label) return null
+  if (notice.kind === 'route') {
+    const continuation = routeContinuation(notice)
+    const continueRow = continuation
+      ? catalog.find(
+          row =>
+            row.value === continuation.model &&
+            row.agent.type === continuation.agent.type &&
+            (row.agent.type !== 'ollama' ||
+              (continuation.agent.type === 'ollama' &&
+                row.agent.serverId === continuation.agent.serverId))
+        )
+      : undefined
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs text-muted-foreground">
+        <IconRoute size={12} stroke={1.75} />
+        <span>{notice.reason}</span>
+        {sessionId && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={saveConfig.isPending}
+            onClick={() => saveConfig.mutate({ sessionId, patch: routeOverridePatch(notice) })}
+          >
+            Use this model
+          </Button>
+        )}
+        {continuation && continueRow && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              setModel(workspaceId, continueRow.selectionId)
+              setRouting(workspaceId, 'manual')
+              setDraft(workspaceId, continuation.message)
+              selectSession(null)
+            }}
+          >
+            Continue in{' '}
+            {continuation.agent.type === 'codex'
+              ? 'Codex'
+              : continuation.agent.type === 'ollama'
+                ? 'Ollama'
+                : 'Claude'}
+          </Button>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="flex justify-center">
       <span className="max-w-full truncate text-xs text-muted-foreground">{label}</span>

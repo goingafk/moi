@@ -8,6 +8,7 @@ import { api } from './api'
 import { AttachmentUploadError } from './attachment-message'
 import { checkBindHost, getAuthPolicy, withAuth } from './auth'
 import { getAppConfig } from './app-config'
+import { getAppSettings } from './app-settings'
 import { PORT } from './constants'
 import { control } from './control'
 import { EVENTS_TOPIC, publishEvent, setEventServer } from './events'
@@ -20,6 +21,10 @@ import { allHarnesses } from './harness/registry'
 import { getWorkspace } from './registry'
 import { saveSelectedSession } from './selected-session'
 import { harnessForSessionAgent, resolveSessionRun, sessionAgentFor } from './session-routing'
+import { getSessionConfig, saveSessionConfig } from './session-config'
+import { fallbackRoute, routeMessage } from './router'
+import { saveRouteNotice } from './router/notices'
+import { routingModeForSend } from './router/wiring'
 import {
   answerApproval,
   cancelSessionApprovals,
@@ -56,6 +61,7 @@ function isClientMessage(value: unknown): value is ClientMessage {
     model?: unknown
     agent?: unknown
     permissionMode?: unknown
+    routing?: unknown
     requestId?: unknown
     decision?: unknown
     note?: unknown
@@ -75,6 +81,7 @@ function isClientMessage(value: unknown): value is ClientMessage {
       (v.optimisticId === undefined || typeof v.optimisticId === 'string') &&
       (v.model === undefined || typeof v.model === 'string') &&
       (v.agent === undefined || isSessionAgent(v.agent)) &&
+      (v.routing === undefined || v.routing === 'auto' || v.routing === 'manual') &&
       (v.permissionMode === undefined ||
         v.permissionMode === 'auto' ||
         v.permissionMode === 'ask-risky' ||
@@ -267,22 +274,107 @@ export const app = Bun.serve<WsData>({
         if (data.type === 'chat' && (data.content?.trim() || data.attachments?.length)) {
           const workspace = await getWorkspace(data.workspaceId)
           if (!workspace) return
+          const existingConfig = await getSessionConfig(workspace.path, data.sessionId)
+          const routing = routingModeForSend({
+            config: existingConfig,
+            isNew: data.isNew,
+            requested: data.routing,
+            defaultMode: getAppSettings().modelMode
+          })
+          let requestedAgent = data.agent
+          let requestedModel = data.model
+          let routeDecision: Awaited<ReturnType<typeof routeMessage>> | undefined
+          if (routing === 'auto') {
+            routeDecision = await routeMessage({
+              workspace,
+              sessionId: data.sessionId,
+              isNew: data.isNew,
+              content: data.content,
+              boundAgent: existingConfig.agent,
+              currentModel: existingConfig.model ?? data.model
+            })
+            requestedAgent = routeDecision.agent
+            requestedModel = routeDecision.model
+          }
           let run: Awaited<ReturnType<typeof resolveSessionRun>>
           try {
             run = await resolveSessionRun(
               workspace,
               data.sessionId,
-              data.agent,
-              data.model,
+              requestedAgent,
+              requestedModel,
               data.permissionMode
             )
           } catch (error) {
-            broadcast(data.workspaceId, {
-              kind: 'error',
-              sessionId: data.sessionId,
-              content: error instanceof Error ? error.message : 'Could not start this agent'
+            if (routeDecision) {
+              routeDecision = await fallbackRoute(
+                {
+                  workspace,
+                  sessionId: data.sessionId,
+                  isNew: data.isNew,
+                  content: data.content,
+                  boundAgent: existingConfig.agent,
+                  currentModel: existingConfig.model ?? data.model
+                },
+                'The routed model became unavailable',
+                { lastChoice: async () => null }
+              )
+              try {
+                run = await resolveSessionRun(
+                  workspace,
+                  data.sessionId,
+                  routeDecision.agent,
+                  routeDecision.model,
+                  data.permissionMode
+                )
+              } catch (fallbackError) {
+                broadcast(data.workspaceId, {
+                  kind: 'error',
+                  sessionId: data.sessionId,
+                  content:
+                    fallbackError instanceof Error
+                      ? fallbackError.message
+                      : 'Could not start this agent'
+                })
+                return
+              }
+            } else {
+              broadcast(data.workspaceId, {
+                kind: 'error',
+                sessionId: data.sessionId,
+                content: error instanceof Error ? error.message : 'Could not start this agent'
+              })
+              return
+            }
+          }
+          if (routeDecision) {
+            await saveSessionConfig(workspace.path, data.sessionId, {
+              routing: 'auto',
+              model: routeDecision.model ?? null
             })
-            return
+            const notice = {
+              id: `route:${crypto.randomUUID()}`,
+              kind: 'route' as const,
+              at: new Date().toISOString(),
+              agent: routeDecision.agent,
+              model: routeDecision.model ?? 'default',
+              label: routeDecision.label,
+              reason: routeDecision.reason,
+              message: data.content,
+              ...(routeDecision.classification
+                ? {
+                    classification: {
+                      difficulty: routeDecision.classification.difficulty,
+                      kind: routeDecision.classification.kind,
+                      classifier: routeDecision.classification.classifier
+                    }
+                  }
+                : {}),
+              ...(routeDecision.fallback ? { fallback: true } : {}),
+              ...(routeDecision.suggestion ? { suggestion: routeDecision.suggestion } : {})
+            }
+            await saveRouteNotice(workspace.path, data.sessionId, notice).catch(() => {})
+            broadcast(data.workspaceId, { kind: 'notice', sessionId: data.sessionId, notice })
           }
           if (data.isNew) {
             const selection = await saveSelectedSession(workspace.path, data.sessionId, null)

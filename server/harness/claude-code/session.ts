@@ -29,6 +29,7 @@ import { tapWire } from '../debug'
 import { broadcast } from '../../state'
 import { renameSelectedSession } from '../../selected-session'
 import { hasSessionConfig, renameSessionConfig, saveSessionConfig } from '../../session-config'
+import { renameRouteNotices } from '../../router/notices'
 import {
   markViewBuilderBuildingBySession,
   markViewBuilderWaitingBySession,
@@ -447,6 +448,7 @@ async function consume(s: LiveSession) {
           renamedFrom = from
           // Carry any config the picker wrote under the temp id to the real id.
           await renameSessionConfig(s.workspacePath, from, s.sessionId)
+          await renameRouteNotices(s.workspacePath, from, s.sessionId)
           renameSessionApprovals(s.workspaceId, from, s.sessionId)
           await renameSelectedSession(s.workspacePath, from, s.sessionId)
           await renameViewBuilderSession(s.workspaceId, s.workspacePath, from, s.sessionId)

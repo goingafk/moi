@@ -61,7 +61,9 @@ export function useChat(address: WorkspaceTabAddress) {
   const catalog = useModelCatalog(workspaceId).data ?? EMPTY_CATALOG
   const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
   const draftPermissionMode = useUiStore(state => state.permissionSelections?.[workspaceId])
-  const permissionDefaults = useAppSettings().data?.permissions.defaults
+  const draftRouting = useUiStore(state => state.routingSelections?.[workspaceId])
+  const appSettings = useAppSettings().data
+  const permissionDefaults = appSettings?.permissions.defaults
   const sessions = useWorkspaceSessions(workspaceId).data
   const selectedSessionMissing =
     Boolean(selectedSession) &&
@@ -130,6 +132,9 @@ export function useChat(address: WorkspaceTabAddress) {
 
       let sid = selectedSessionId
       const pickedModel = sessionConfig?.model ?? layout.selectedModel
+      const routing = selectedSessionId
+        ? (sessionConfig?.routing ?? 'manual')
+        : (draftRouting ?? appSettings?.modelMode ?? 'manual')
       const selected = selectedCatalogModel(
         catalog,
         sessionConfig?.agent ?? { type: modelsData?.provider ?? 'claude-code' },
@@ -211,8 +216,14 @@ export function useChat(address: WorkspaceTabAddress) {
         sessionId: sid,
         isNew,
         optimisticId,
-        model,
-        agent: selectedSessionId && !sessionConfig?.agent ? undefined : selected?.agent,
+        model: routing === 'auto' ? undefined : model,
+        agent:
+          routing === 'auto'
+            ? undefined
+            : selectedSessionId && !sessionConfig?.agent
+              ? undefined
+              : selected?.agent,
+        ...(isNew ? { routing } : {}),
         permissionMode,
         effort,
         fastMode,
@@ -237,6 +248,8 @@ export function useChat(address: WorkspaceTabAddress) {
       workspaceId,
       qc,
       draftPermissionMode,
+      draftRouting,
+      appSettings?.modelMode,
       permissionDefaults,
       layout.selectedModel,
       layout.selectedEffort,

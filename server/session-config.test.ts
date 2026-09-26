@@ -62,3 +62,15 @@ describe('session agent binding', () => {
     expect((await getSessionConfig(workspacePath, 'real')).agent).toEqual(agent)
   })
 })
+
+describe('session routing mode', () => {
+  test('round-trips routing and preserves manual when other fields are cleared', async () => {
+    await saveSessionConfig(workspacePath, 'routed', { routing: 'auto', model: 'sonnet' })
+    expect(await getSessionConfig(workspacePath, 'routed')).toEqual({
+      routing: 'auto',
+      model: 'sonnet'
+    })
+    await saveSessionConfig(workspacePath, 'routed', { routing: 'manual', model: null })
+    expect(await getSessionConfig(workspacePath, 'routed')).toEqual({ routing: 'manual' })
+  })
+})

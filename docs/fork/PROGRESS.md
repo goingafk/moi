@@ -272,19 +272,31 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Added server-side Auto routing at the chat send point. Jev and Laya classify difficulty and task kind through a strict fallback chain; pure code selects from the live unified catalog using editable eligibility groups, provider availability, reset-weighted headroom, warm local preference, and a configurable Claude reserve.
+- The first Auto message can bind Claude, Codex, or Ollama. Follow-ups are reclassified but stay on their bound agent and can change model; a strictly better cross-agent group becomes a **Continue in <agent>** suggestion. Classifier/selection failures fall back to the last compatible route, current chat model, or workspace default, and a vanished routed model gets one fallback resolution attempt.
+- Added a global TypeSafe secret store (OS keychain or `0600` file), authenticated routing status/key/decision APIs, per-chat routing persistence, a JSONL decision log, and a separate reconnect-safe route-notice store that follows temporary session renames.
+- Added Auto to the composer picker and a Settings → Routing page for the default mode, primary classifier, write-only TypeSafe key, Laya endpoint, Claude reserve, ordered eligibility groups, reset-to-defaults, and recent decisions. Route rows explain every choice and offer **Use this model** or a cross-agent continuation.
 
 ### Verification
 
-Not run.
+- Full suite with an isolated data directory: 1,869 passed, 5 host-dependent service/tmux tests skipped, 0 failed across 222 files. Coverage includes settings validation, `0600` secrets, selection ladders/headroom/reserve/staleness, classifier request/parse/retry/fallback, bounded logs, no-throw fallbacks, route-notice reconnect/rename, API key secrecy, mode resolution, route placement, and action helpers.
+- `bun run typecheck`, `bun run format:check`, `git diff --check`, and `bun run build:client`: passed. `bun run lint`: exited 0 with the same 9 pre-existing React warnings.
+- Browser smoke-tested the isolated development app: Settings → Routing rendered the complete configuration surface; Auto was disabled with the setup explanation before a classifier was configured, enabled after saving a Laya endpoint, and selecting it changed the composer control to **Model: Auto**.
+- Verified TypeSafe request/response shapes from current official documentation and the live Phase 6 scorer. Read the live Claude Code 2.1.282 and Codex 0.153.4 catalogs: Claude aliases are `haiku`/`sonnet`/`opus`; Codex routing matches are `luna`/`sol`/`astra`. Confirmed in source that Claude applies `setModel` to a live query and Codex sends the model on each fresh `turn/start`.
 
 ### Decisions
 
-None yet.
+- Keep the global default Manual; Auto is opt-in globally or per chat.
+- Persist route notices outside provider transcripts and merge them into the session event snapshot, because the router is deliberately above the harness layer.
+- Store the triggering message with the local route notice only so **Continue in** can prefill it; the tuning log stores only a 120-character normalized preview and the API exposes 60 characters.
+- Use direct TypeSafe HTTP requests rather than add an SDK dependency, matching the live Phase 6 implementation. A valid classification survives a usage-accounting write failure.
 
 ### Open items
 
-All Phase 7 tasks in `PLAN.md`.
+- The JSONL decision log and route-notice store are not rotated; monitor data-directory growth and add retention after real traffic establishes a useful horizon.
+- Laya is tested against fake OpenAI-compatible responses but is not deployed, matching Phase 6.
+- Live end-to-end Auto sends against Jev and the owner's Ollama server remain a deployment check because this isolated verification environment had neither credential nor Ollama endpoint configured. Phase 2 already verified `qwen3.8:27b` with tools at `100.125.20.45:11434`.
+- Routing adds up to four seconds before memory's bounded digest fetch; they remain sequential in this phase. Consider fetching the digest in parallel after production latency data is available.
 
 ## Phase 8 — Mobile
 

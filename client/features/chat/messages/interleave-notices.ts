@@ -19,6 +19,8 @@ export function chatNoticeLabel(notice: SystemNotice): string | null {
       return notice.prev
         ? `Model changed to ${notice.model} (was ${notice.prev})`
         : `Model changed to ${notice.model}`
+    case 'route':
+      return notice.reason
     case 'api-retry':
       return notice.error ? `Retrying: ${notice.error}` : 'Retrying the connection'
     // Claude-code-specific notices without a designed chat treatment yet —
@@ -68,11 +70,25 @@ export function interleaveNotices(turns: Turn[], notices: SystemNotice[]): ChatT
     // `<=`: a notice stamped with the turn's own timestamp announces that
     // turn (model-change carries the switching turn's time) and must render
     // before it.
+    const due: SystemNotice[] = []
     while (next < dated.length && dated[next].time <= turnTime) {
-      out.push({ kind: 'notice', notice: dated[next].notice })
+      due.push(dated[next].notice)
       next += 1
     }
+    for (const notice of due) {
+      if (turn.role !== 'user' || notice.kind !== 'route') {
+        out.push({ kind: 'notice', notice })
+      }
+    }
     out.push({ kind: 'turn', turn })
+    // A routing decision belongs to the request it classified. When its
+    // timestamp lands on or just before that user turn, keep the notice after
+    // the request so it sits immediately above the routed assistant work.
+    for (const notice of due) {
+      if (turn.role === 'user' && notice.kind === 'route') {
+        out.push({ kind: 'notice', notice })
+      }
+    }
   }
   for (; next < dated.length; next += 1) out.push({ kind: 'notice', notice: dated[next].notice })
   for (const notice of anchorless) out.push({ kind: 'notice', notice })

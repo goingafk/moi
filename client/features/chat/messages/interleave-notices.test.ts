@@ -6,10 +6,10 @@ import {
 } from '@/client/features/chat/messages/interleave-notices'
 import type { SystemNotice, Turn } from '@/lib/types'
 
-function turn(id: string, timestamp?: string): Turn {
+function turn(id: string, timestamp?: string, role: Turn['role'] = 'assistant'): Turn {
   return {
     id,
-    role: 'assistant',
+    role,
     origin: { kind: 'user-input' },
     parts: [{ type: 'text', text: id }],
     ...(timestamp ? { timestamp } : {})
@@ -64,6 +64,41 @@ describe('chatNoticeLabel', () => {
     expect(
       chatNoticeLabel({ id: 'retry', kind: 'api-retry', at: 't', error: 'Reconnecting' })
     ).toBe('Retrying: Reconnecting')
+  })
+
+  test('keeps route notices with their reason', () => {
+    expect(
+      chatNoticeLabel({
+        id: 'route:1',
+        kind: 'route',
+        at: '2026-01-01T00:00:00Z',
+        agent: { type: 'codex' },
+        model: 'gpt',
+        label: 'GPT',
+        reason: 'OpenAI usage resets soon',
+        message: 'Fix it'
+      })
+    ).toBe('OpenAI usage resets soon')
+  })
+
+  test('puts a route notice after its user request and before the assistant turn', () => {
+    const user = turn('user', '2026-01-01T00:00:01Z', 'user')
+    const assistant = turn('assistant', '2026-01-01T00:00:02Z')
+    const notice: SystemNotice = {
+      id: 'route:1',
+      kind: 'route',
+      at: '2026-01-01T00:00:01Z',
+      agent: { type: 'codex' },
+      model: 'gpt',
+      label: 'GPT',
+      reason: 'reason',
+      message: 'request'
+    }
+    expect(interleaveNotices([user, assistant], [notice]).map(item => item.kind)).toEqual([
+      'turn',
+      'notice',
+      'turn'
+    ])
   })
 })
 

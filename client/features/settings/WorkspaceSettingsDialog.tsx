@@ -7,7 +7,8 @@ import {
   IconCpu,
   IconShieldLock,
   IconChartBar,
-  IconBrain
+  IconBrain,
+  IconRoute
 } from '@tabler/icons-react'
 
 import { Button } from '@/client/components/ui/button'
@@ -20,6 +21,7 @@ import { MemorySettings } from './MemorySettings'
 import { ModelsSettings } from './ModelsSettings'
 import { PermissionsSettings } from './PermissionsSettings'
 import { UsageSettings } from './UsageSettings'
+import { RoutingSettingsPage } from './RoutingSettings'
 
 export { DialogTrigger as WorkspaceSettingsDialogTrigger } from '@/client/components/ui/dialog'
 
@@ -28,6 +30,7 @@ type SettingsNav =
   | 'models'
   | 'usage'
   | 'memory'
+  | 'routing'
   | 'permissions'
   | 'connectors'
   | 'environment'
@@ -37,6 +40,7 @@ const NAV: { id: SettingsNav; label: string; icon: typeof IconSettings }[] = [
   { id: 'models', label: 'Models', icon: IconCpu },
   { id: 'usage', label: 'Usage', icon: IconChartBar },
   { id: 'memory', label: 'Memory', icon: IconBrain },
+  { id: 'routing', label: 'Routing', icon: IconRoute },
   { id: 'permissions', label: 'Permissions', icon: IconShieldLock },
   { id: 'connectors', label: 'Connectors', icon: IconPlugConnected },
   { id: 'environment', label: 'Environment', icon: IconKey }
@@ -81,6 +85,7 @@ export function WorkspaceSettingsDialog({ children }: WorkspaceSettingsDialogPro
             {page === 'models' && <ModelsSettings />}
             {page === 'usage' && <UsageSettings />}
             {page === 'memory' && <MemorySettings />}
+            {page === 'routing' && <RoutingSettingsPage />}
             {page === 'permissions' && <PermissionsSettings />}
             {page === 'connectors' && <ConnectorsSettings />}
             {page === 'environment' && <EnvironmentSettings />}

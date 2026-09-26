@@ -1,6 +1,7 @@
 import Conf from 'conf'
 
 import type { AppSettings } from '@/lib/types'
+import { DEFAULT_ELIGIBILITY_TABLE } from '@/lib/routing'
 
 import { DATA_DIR } from './data-dir'
 
@@ -22,7 +23,8 @@ const API_UPDATABLE = [
   'ollamaServers',
   'localMcpServers',
   'permissions',
-  'memory'
+  'memory',
+  'routing'
 ] as const satisfies readonly (keyof AppSettings)[]
 
 // Pick the API-updatable fields out of an untrusted body; unknown keys are
@@ -121,6 +123,56 @@ function store(): Conf<AppSettings> {
         required: ['url'],
         additionalProperties: false
       },
+      routing: {
+        type: 'object',
+        default: {
+          classifier: 'jev',
+          laya: null,
+          claudeReservePercent: 70,
+          table: DEFAULT_ELIGIBILITY_TABLE
+        },
+        properties: {
+          classifier: { type: 'string', enum: ['jev', 'laya'] },
+          laya: {
+            type: ['object', 'null'],
+            properties: {
+              baseUrl: { type: 'string', pattern: '^https?://[^\\s/@]+/?$' },
+              model: { type: 'string', minLength: 1 }
+            },
+            required: ['baseUrl', 'model'],
+            additionalProperties: false
+          },
+          claudeReservePercent: { type: 'number', minimum: 0, maximum: 100 },
+          table: {
+            type: 'object',
+            properties: Object.fromEntries(
+              ['trivial', 'medium', 'hard'].map(tier => [
+                tier,
+                {
+                  type: 'array',
+                  items: {
+                    type: 'array',
+                    minItems: 1,
+                    items: {
+                      type: 'object',
+                      properties: {
+                        agent: { type: 'string', enum: ['claude-code', 'codex', 'ollama'] },
+                        match: { type: 'string' }
+                      },
+                      required: ['agent'],
+                      additionalProperties: false
+                    }
+                  }
+                }
+              ])
+            ),
+            required: ['trivial', 'medium', 'hard'],
+            additionalProperties: false
+          }
+        },
+        required: ['classifier', 'laya', 'claudeReservePercent', 'table'],
+        additionalProperties: false
+      },
       ollamaServers: {
         type: 'array',
         default: [],
@@ -182,6 +234,17 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ) {
         throw new Error('Ollama server URL must be an HTTP(S) origin without credentials or a path')
       }
+    }
+  }
+  if (patch.routing?.laya) {
+    let url: URL
+    try {
+      url = new URL(patch.routing.laya.baseUrl)
+    } catch {
+      throw new Error('Invalid Laya URL')
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('Laya URL must be HTTP(S) without credentials')
     }
   }
   if (Object.keys(patch).length > 0) settings.set(patch)

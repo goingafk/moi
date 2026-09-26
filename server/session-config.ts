@@ -1,7 +1,7 @@
 import { mkdir, rename } from 'node:fs/promises'
 import { join } from 'path'
 
-import type { PermissionMode, SessionAgent, SessionConfig } from '@/lib/types'
+import type { PermissionMode, RoutingMode, SessionAgent, SessionConfig } from '@/lib/types'
 import { isSessionAgent, sameSessionAgent } from '@/lib/session-agent'
 
 import { DATA_DIR } from './data-dir'
@@ -16,6 +16,7 @@ import { DATA_DIR } from './data-dir'
 // A patch may clear a field with `null` (vs `undefined`, which leaves it alone).
 export type SessionConfigPatch = {
   agent?: SessionAgent
+  routing?: RoutingMode
   permissionMode?: PermissionMode
   model?: string | null
   effort?: string | null
@@ -36,6 +37,7 @@ export function setSessionConfigPath(path: string): void {
 function clean(cfg: SessionConfig | undefined): SessionConfig {
   const out: SessionConfig = {}
   if (isSessionAgent(cfg?.agent)) out.agent = cfg.agent
+  if (cfg?.routing === 'auto' || cfg?.routing === 'manual') out.routing = cfg.routing
   if (
     cfg?.permissionMode === 'auto' ||
     cfg?.permissionMode === 'ask-risky' ||
@@ -51,6 +53,7 @@ function clean(cfg: SessionConfig | undefined): SessionConfig {
 function isEmpty(cfg: SessionConfig): boolean {
   return (
     cfg.agent === undefined &&
+    cfg.routing === undefined &&
     cfg.permissionMode === undefined &&
     cfg.model === undefined &&
     cfg.effort === undefined &&
@@ -133,7 +136,14 @@ export async function bindDiscoveredSessionAgents(
 
 export async function hasSessionConfig(workspacePath: string, sessionId: string): Promise<boolean> {
   const config = await getSessionConfig(workspacePath, sessionId)
-  return config.model !== undefined || config.effort !== undefined || config.fastMode !== undefined
+  return (
+    config.agent !== undefined ||
+    config.routing !== undefined ||
+    config.permissionMode !== undefined ||
+    config.model !== undefined ||
+    config.effort !== undefined ||
+    config.fastMode !== undefined
+  )
 }
 
 // Merge a patch over the stored config and write it back. `null` clears a field,
@@ -154,6 +164,7 @@ export async function saveSessionConfig(
       }
       next.agent = patch.agent
     }
+    if (patch.routing) next.routing = patch.routing
     if (patch.permissionMode) next.permissionMode = patch.permissionMode
     for (const key of ['model', 'effort'] as const) {
       const value = patch[key]

@@ -6,6 +6,12 @@ import { workspaceKeys } from '@/client/api/workspace-keys'
 import { sessionViewOptions } from '@/client/features/chat/sessions/session-view'
 import type { SessionConfig, SessionInfo } from '@/lib/types'
 
+type SessionConfigUpdate = Omit<SessionConfig, 'model' | 'effort' | 'fastMode'> & {
+  model?: string | null
+  effort?: string | null
+  fastMode?: boolean | null
+}
+
 export function useWorkspaceSessions(workspaceId: string) {
   return useQuery<SessionInfo[]>({
     queryKey: workspaceKeys.sessions(workspaceId),
@@ -62,7 +68,7 @@ export function useSessionConfig(workspaceId: string, sessionId: string | null) 
 
 export function useSaveSessionConfig(workspaceId: string) {
   const queryClient = useQueryClient()
-  return useMutation<SessionConfig, Error, { sessionId: string; patch: SessionConfig }>({
+  return useMutation<SessionConfig, Error, { sessionId: string; patch: SessionConfigUpdate }>({
     mutationFn: ({ patch, sessionId }) =>
       requestJson(
         `/api/workspaces/${workspaceId}/sessions/${sessionId}/config`,

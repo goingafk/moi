@@ -1,4 +1,11 @@
-import type { AttachmentOrigin, DrawingPurpose, TextAttachment } from './types'
+import type {
+  AttachmentOrigin,
+  Difficulty,
+  DrawingPurpose,
+  SessionAgent,
+  TaskKind,
+  TextAttachment
+} from './types'
 
 // Display-only conversation format. Agent-agnostic.
 // Source: server/harness/README.md (format section; formerly claude-code-messages.md §14) (and the research PDF under dev/report).
@@ -173,6 +180,23 @@ export type SystemNotice =
   // Mid-session model switch observed on the backend (e.g. OpenClaw
   // `sessions.patch { model }` — from moi's picker or any other client).
   | { id: string; kind: 'model-change'; at: string; model: string; prev?: string }
+  | {
+      id: string
+      kind: 'route'
+      at: string
+      agent: SessionAgent
+      model: string
+      label: string
+      reason: string
+      message: string
+      classification?: {
+        difficulty: Difficulty
+        kind: TaskKind
+        classifier: 'jev' | 'laya'
+      }
+      fallback?: boolean
+      suggestion?: { agent: SessionAgent; model: string; label: string }
+    }
   | {
       id: string
       kind: 'hook'

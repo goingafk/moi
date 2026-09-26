@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { AppSettings } from '@/lib/types'
 
 import { api } from './api'
+import { DEFAULT_ELIGIBILITY_TABLE } from '@/lib/routing'
 import { setAppSettingsDir } from './app-settings'
 import { DATA_DIR } from './data-dir'
 import { setEventServer } from './events'
@@ -41,6 +42,12 @@ describe('app settings API', () => {
     alwaysAsk: [],
     alwaysAllow: []
   } satisfies AppSettings['permissions']
+  const routing = {
+    classifier: 'jev' as const,
+    laya: null,
+    claudeReservePercent: 70,
+    table: DEFAULT_ELIGIBILITY_TABLE
+  }
   test('returns defaults before anything is saved', async () => {
     const response = await api.request('/api/settings')
     const settings = (await response.json()) as AppSettings
@@ -52,7 +59,8 @@ describe('app settings API', () => {
       ollamaServers: [],
       localMcpServers: [],
       permissions,
-      memory: { url: null }
+      memory: { url: null },
+      routing
     })
   })
 
@@ -72,7 +80,8 @@ describe('app settings API', () => {
       ollamaServers: [],
       localMcpServers: [],
       permissions,
-      memory: { url: null }
+      memory: { url: null },
+      routing
     })
 
     const readBack = await api.request('/api/settings')
@@ -88,7 +97,8 @@ describe('app settings API', () => {
           ollamaServers: [],
           localMcpServers: [],
           permissions,
-          memory: { url: null }
+          memory: { url: null },
+          routing
         }
       }
     ])
@@ -114,7 +124,8 @@ describe('app settings API', () => {
       ollamaServers: [],
       localMcpServers: [],
       permissions,
-      memory: { url: null }
+      memory: { url: null },
+      routing
     })
   })
 
@@ -167,6 +178,41 @@ describe('app settings API', () => {
         body: JSON.stringify({ ollamaServers: servers })
       })
       expect(response.status).toBe(400)
+    }
+  })
+
+  test('stores routing settings and rejects bad agents and Laya URLs', async () => {
+    const valid = {
+      ...routing,
+      classifier: 'laya' as const,
+      laya: { baseUrl: 'http://100.125.20.45:11435', model: 'laya' },
+      claudeReservePercent: 65
+    }
+    const response = await api.request('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ routing: valid })
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as AppSettings).routing).toEqual(valid)
+
+    for (const invalid of [
+      { ...valid, laya: { baseUrl: 'file:///tmp/laya', model: 'laya' } },
+      { ...valid, claudeReservePercent: 101 },
+      {
+        ...valid,
+        table: { ...valid.table, trivial: [[{ agent: 'hermes' }]] }
+      }
+    ]) {
+      expect(
+        (
+          await api.request('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ routing: invalid })
+          })
+        ).status
+      ).toBe(400)
     }
   })
 })

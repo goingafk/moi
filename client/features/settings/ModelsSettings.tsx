@@ -44,12 +44,6 @@ export function ModelsSettings() {
       title="Models"
       description="Choose agents and connect Ollama servers for local models."
     >
-      <SettingsSection label="Mode">
-        <SettingsRow
-          title="Manual"
-          description="Choose the model for each chat. Auto is coming soon."
-        />
-      </SettingsSection>
       <SettingsSection label="Local model tools">
         <div className="flex flex-col gap-2 p-3.5">
           <p className="text-xs text-muted-foreground">

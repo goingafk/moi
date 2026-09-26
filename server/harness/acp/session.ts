@@ -54,6 +54,7 @@ import { debug } from '../../debug'
 import { broadcast } from '../../state'
 import { renameSelectedSession } from '../../selected-session'
 import { hasSessionConfig, renameSessionConfig, saveSessionConfig } from '../../session-config'
+import { renameRouteNotices } from '../../router/notices'
 import { renameViewBuilderSession } from '../../view-builders'
 
 export type AcpSpawnContext = {
@@ -609,6 +610,7 @@ export async function sendAcpMessage(
       if (realId !== input.sessionId) {
         aliases.set(recKey(input.workspaceId, input.sessionId), realId)
         await renameSessionConfig(input.workspacePath, input.sessionId, realId)
+        await renameRouteNotices(input.workspacePath, input.sessionId, realId)
         await renameSelectedSession(input.workspacePath, input.sessionId, realId)
         await renameViewBuilderSession(
           input.workspaceId,

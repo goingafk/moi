@@ -29,6 +29,7 @@ import { clientAppConfig, getAppConfig } from './app-config'
 import { getAppSettings, pickAppSettingsPatch, saveAppSettings } from './app-settings'
 import { getAuthPolicy } from './auth'
 import { appletForModule, recordAppletError } from './applet-log'
+import { deleteAppSecret, hasAppSecret, setAppSecret } from './app-secrets'
 import { apiBaseFor, parseAppletTail, serveWorkspaceFile } from './applets'
 import { applyEnvChanged } from './env-apply'
 import { publishEvent } from './events'
@@ -37,6 +38,8 @@ import { processIcon } from './icon'
 import { getWorkspacePreview, loadLayout, mergeLayoutForSave, saveLayout } from './layout'
 import { listModelCatalog } from './model-catalog'
 import { memoryRoutes } from './memory/routes'
+import { recentRoutingDecisions } from './router/log'
+import { routeNoticeEvents } from './router/notices'
 import { localMcpConfig } from './ollama/mcp'
 import {
   getAppletThumbnailRecords,
@@ -631,9 +634,11 @@ one.post('/sessions/:sessionId/archive', async c => {
 one.get('/sessions/:sessionId/events', async c => {
   const ws = c.get('ws')
   const sessionId = c.req.param('sessionId')
-  return c.json(
-    await harnessForSessionAgent(await sessionAgentFor(ws, sessionId)).sessionEvents(ws, sessionId)
-  )
+  const [events, notices] = await Promise.all([
+    harnessForSessionAgent(await sessionAgentFor(ws, sessionId)).sessionEvents(ws, sessionId),
+    routeNoticeEvents(ws.path, sessionId)
+  ])
+  return c.json([...events, ...notices])
 })
 
 // Per-session agent settings (model, reasoning effort, and Fast mode). GET
@@ -678,6 +683,13 @@ one.put('/sessions/:sessionId/config', async c => {
       return c.text('Codex cannot ask before every tool call', 400)
     }
     patch.permissionMode = mode
+  }
+  if ('routing' in record) {
+    const routing = record.routing
+    if (routing !== 'auto' && routing !== 'manual') {
+      return c.text('routing must be auto or manual', 400)
+    }
+    patch.routing = routing
   }
   return c.json(await saveSessionConfig(c.get('ws').path, c.req.param('sessionId'), patch))
 })
@@ -1287,6 +1299,44 @@ api.get('/api/settings', c => c.json(getAppSettings()))
 api.get('/api/usage', async c => {
   const refresh = c.req.query('refresh') === '1'
   return c.json(await usageOverview(refresh))
+})
+
+api.get('/api/routing/status', async c => {
+  const routing = getAppSettings().routing
+  return c.json({
+    jevKeySet: await hasAppSecret('typesafe-api-key'),
+    layaConfigured: Boolean(routing.laya?.baseUrl && routing.laya.model)
+  })
+})
+
+api.put('/api/routing/typesafe-key', async c => {
+  const body: unknown = await c.req.json().catch(() => null)
+  const key =
+    body && typeof body === 'object' && !Array.isArray(body) && 'key' in body
+      ? (body as Record<string, unknown>).key
+      : null
+  if (typeof key !== 'string' || !key.trim() || key.length > 10_000) {
+    return c.text('Expected a non-empty key', 400)
+  }
+  await setAppSecret('typesafe-api-key', key.trim())
+  return c.json({ jevKeySet: true })
+})
+
+api.delete('/api/routing/typesafe-key', async c => {
+  await deleteAppSecret('typesafe-api-key')
+  return c.body(null, 204)
+})
+
+api.get('/api/routing/decisions', async c => {
+  const requested = Number(c.req.query('limit') ?? 20)
+  const limit = Number.isFinite(requested) ? Math.max(1, Math.min(Math.floor(requested), 100)) : 20
+  const entries = await recentRoutingDecisions(limit)
+  return c.json(
+    entries.map(entry => ({
+      ...entry,
+      messagePreview: entry.messagePreview.slice(0, 60)
+    }))
+  )
 })
 
 api.patch('/api/settings', async c => {

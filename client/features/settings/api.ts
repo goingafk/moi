@@ -5,7 +5,13 @@ import { WORKSPACE_RESOURCE_OPTIONS } from '@/client/api/query-options'
 import { workspaceKeys } from '@/client/api/workspace-keys'
 import type { WorkspaceLayoutResponse } from '@/client/features/workspace/api'
 import { useWorkspaceEvent } from '@/client/runtime/useWorkspaceEvents'
-import type { AppSettings, WorkspaceEntry, WorkspaceEnvView, WorkspaceIcon } from '@/lib/types'
+import type {
+  AppSettings,
+  RoutingDecisionLog,
+  WorkspaceEntry,
+  WorkspaceEnvView,
+  WorkspaceIcon
+} from '@/lib/types'
 
 // App-wide settings (server-side settings.json, GET/PATCH /api/settings) —
 // shared by every workspace, unlike the per-workspace queries below.
@@ -34,7 +40,50 @@ export function useSaveAppSettings() {
       requestJson('/api/settings', jsonRequest('PATCH', patch), 'Failed to save settings'),
     onSuccess: next => {
       queryClient.setQueryData<AppSettings>(appSettingsKey, next)
+      queryClient.invalidateQueries({ queryKey: routingStatusKey })
     }
+  })
+}
+
+export type RoutingStatus = { jevKeySet: boolean; layaConfigured: boolean }
+export const routingStatusKey = ['routing-status'] as const
+export const routingDecisionsKey = ['routing-decisions'] as const
+
+export function useRoutingStatus() {
+  return useQuery<RoutingStatus>({
+    queryKey: routingStatusKey,
+    queryFn: () => requestJson('/api/routing/status'),
+    staleTime: 30_000
+  })
+}
+
+export function useSaveTypeSafeKey() {
+  const queryClient = useQueryClient()
+  return useMutation<RoutingStatus, Error, string>({
+    mutationFn: key =>
+      requestJson('/api/routing/typesafe-key', jsonRequest('PUT', { key }), 'Failed to save key'),
+    onSuccess: next => queryClient.setQueryData(routingStatusKey, next)
+  })
+}
+
+export function useRemoveTypeSafeKey() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error>({
+    mutationFn: () =>
+      requestVoid('/api/routing/typesafe-key', { method: 'DELETE' }, 'Failed to remove key'),
+    onSuccess: () =>
+      queryClient.setQueryData<RoutingStatus>(routingStatusKey, current => ({
+        jevKeySet: false,
+        layaConfigured: current?.layaConfigured ?? false
+      }))
+  })
+}
+
+export function useRoutingDecisions() {
+  return useQuery<RoutingDecisionLog[]>({
+    queryKey: routingDecisionsKey,
+    queryFn: () => requestJson('/api/routing/decisions?limit=20'),
+    staleTime: 10_000
   })
 }
 

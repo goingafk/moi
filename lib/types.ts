@@ -275,6 +275,9 @@ export type ClientMessage =
       model?: string
       // Agent choice for a new chat; existing sessions keep their stored binding.
       agent?: SessionAgent
+      // Routing mode is accepted only for a new chat. Existing chats use their
+      // persisted SessionConfig so a stale browser cannot silently flip modes.
+      routing?: RoutingMode
       permissionMode?: PermissionMode
       // Reasoning effort for this turn (one of the model's `supportedEffortLevels`).
       // Omitted means the SDK default. Unlike model, the SDK has no live setter,
@@ -330,6 +333,7 @@ export type SessionInfo = {
 // corresponding workspace defaults.
 export type SessionConfig = {
   agent?: SessionAgent
+  routing?: RoutingMode
   permissionMode?: PermissionMode
   model?: string
   effort?: string
@@ -341,6 +345,18 @@ export type SessionAgent =
   | { type: 'ollama'; serverId: string }
 
 export type PermissionMode = 'auto' | 'ask-risky' | 'ask-all'
+export type RoutingMode = 'auto' | 'manual'
+export type Difficulty = 'trivial' | 'medium' | 'hard'
+export type TaskKind = 'ui-scaffold' | 'refactor' | 'debug' | 'tests' | 'docs' | 'other'
+export type RouteAgent = 'claude-code' | 'codex' | 'ollama'
+export type RouteMatcher = { agent: RouteAgent; match?: string }
+export type EligibilityTable = Record<Difficulty, RouteMatcher[][]>
+export type RoutingSettings = {
+  classifier: 'jev' | 'laya'
+  laya: { baseUrl: string; model: string } | null
+  claudeReservePercent: number
+  table: EligibilityTable
+}
 export type PermissionRule =
   | 'outsideProject'
   | 'deletes'
@@ -392,13 +408,38 @@ export type AppSettings = {
   // Apply bundled workspace-skill updates automatically when a workspace
   // with outdated skills is opened, instead of prompting each time.
   autoUpdateSkills: boolean
-  // Auto is reserved for Phase 7; Phase 2 exposes manual model selection.
-  modelMode: 'manual' | 'auto'
+  modelMode: RoutingMode
   ollamaServers: OllamaServer[]
   localMcpServers: string[]
   permissions: PermissionSettings
   // Shared memory service (Phase 6). `url: null` turns memory off in moi.
   memory: MemorySettings
+  routing: RoutingSettings
+}
+
+export type RoutingClassification = {
+  difficulty: Difficulty
+  kind: TaskKind
+  confidence: number
+  classifier: 'jev' | 'laya'
+  inputTokens?: number
+  outputTokens?: number
+  lowConfidence?: boolean
+}
+
+export type RoutingDecisionLog = {
+  at: string
+  workspacePath: string
+  sessionId: string
+  isNew: boolean
+  messagePreview: string
+  classification?: RoutingClassification
+  candidates: { selectionId: string; score: number | null; dropped: string | null }[]
+  chosen: { agent: SessionAgent; model?: string; label: string }
+  reason: string
+  fallback: string | null
+  suggestion: { agent: SessionAgent; model: string; label: string } | null
+  latencyMs: number
 }
 
 export type MemorySettings = {

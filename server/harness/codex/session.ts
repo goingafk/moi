@@ -49,6 +49,7 @@ import { debug } from '../../debug'
 import { broadcast } from '../../state'
 import { renameSelectedSession } from '../../selected-session'
 import { hasSessionConfig, renameSessionConfig, saveSessionConfig } from '../../session-config'
+import { renameRouteNotices } from '../../router/notices'
 import { renameViewBuilderSession } from '../../view-builders'
 
 type CodexUserInputItem = { type: 'text'; text: string } | { type: 'image'; url: string }
@@ -961,6 +962,7 @@ async function sendMessage(
         aliases.set(recKey(input.workspaceId, input.sessionId), realId)
         sendLanes.set(recKey(input.workspaceId, realId), lane)
         await renameSessionConfig(input.workspacePath, input.sessionId, realId)
+        await renameRouteNotices(input.workspacePath, input.sessionId, realId)
         renameSessionApprovals(input.workspaceId, input.sessionId, realId)
         await renameSelectedSession(input.workspacePath, input.sessionId, realId)
         // Builder tabs follow the same temporary-to-real session rename.

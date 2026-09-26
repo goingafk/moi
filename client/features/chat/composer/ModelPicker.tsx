@@ -2,13 +2,14 @@ import { type ComponentProps, type ReactNode, memo, useState } from 'react'
 
 import { AnimatePresence, motion } from 'motion/react'
 
-import { IconBolt, IconBoltFilled } from '@tabler/icons-react'
+import { IconBolt, IconBoltFilled, IconRoute } from '@tabler/icons-react'
 
 import { useSaveSessionConfig, useSessionConfig } from '../sessions/api'
 import { useWorkspaceAgent } from '@/client/features/workspace/api'
 import { useModelCatalog } from '@/client/features/workspace/api'
 import { useSelectedSession } from '../sessions/useSelectedSession'
 import { useUiStore } from '@/client/store/ui'
+import { useAppSettings, useRoutingStatus } from '@/client/features/settings/api'
 import { sameSessionAgent } from '@/lib/session-agent'
 import { selectedCatalogModel } from './catalog-selection'
 import {
@@ -87,12 +88,24 @@ type ModelDropdownProps = {
   current: string
   model: CatalogModel
   models: readonly CatalogModel[]
+  auto: boolean
+  autoDisabled: boolean
+  autoLabel: string
   onOpen: () => void
   onValueChange: (value: string) => void
 }
 
-function ModelDropdown({ current, model, models, onOpen, onValueChange }: ModelDropdownProps) {
-  const label = model.displayName
+function ModelDropdown({
+  current,
+  model,
+  models,
+  auto,
+  autoDisabled,
+  autoLabel,
+  onOpen,
+  onValueChange
+}: ModelDropdownProps) {
+  const label = auto ? autoLabel : model.displayName
   const groups = groupModels(models, 'Models')
 
   return (
@@ -102,6 +115,22 @@ function ModelDropdown({ current, model, models, onOpen, onValueChange }: ModelD
       />
       <DropdownMenuContent align="end" side="top" className="w-max max-w-64 min-w-40">
         <DropdownMenuRadioGroup value={current} onValueChange={onValueChange}>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Routing</DropdownMenuLabel>
+            <DropdownMenuRadioItem
+              value="__auto__"
+              closeOnClick
+              disabled={autoDisabled}
+              title={
+                autoDisabled
+                  ? 'Add a TypeSafe key or Laya endpoint in Settings → Routing'
+                  : undefined
+              }
+            >
+              <IconRoute size={12} stroke={1.75} />
+              Auto
+            </DropdownMenuRadioItem>
+          </DropdownMenuGroup>
           {groups.map(group => (
             <DropdownMenuGroup key={group.label}>
               <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
@@ -312,6 +341,10 @@ export const ModelPicker = memo(function ModelPicker({
   const [, selectSession] = useSelectedSession()
   const draftSelection = useUiStore(state => state.modelSelections[workspaceId])
   const setDraftSelection = useUiStore(state => state.setModelSelection)
+  const draftRouting = useUiStore(state => state.routingSelections?.[workspaceId])
+  const setDraftRouting = useUiStore(state => state.setRoutingSelection)
+  const appSettings = useAppSettings().data
+  const routingStatus = useRoutingStatus()
 
   // The SDK prepends a synthetic "default" entry ("Use the default model
   // (currently …)"). Drop it and name the concrete model it resolves to.
@@ -331,10 +364,22 @@ export const ModelPicker = memo(function ModelPicker({
   const selectedEffort = (sessionId ? sessionConfig?.effort : undefined) ?? layout.selectedEffort
   const selectedFastMode =
     (sessionId ? sessionConfig?.fastMode : undefined) ?? layout.selectedFastMode
+  const routing = sessionId
+    ? (sessionConfig?.routing ?? 'manual')
+    : (draftRouting ?? appSettings?.modelMode ?? 'manual')
+  const auto = routing === 'auto'
+  const autoDisabled =
+    routingStatus.data !== undefined &&
+    !routingStatus.data.jevKeySet &&
+    !routingStatus.data.layaConfigured
 
   const setSelectedModel = (value: string) => {
-    if (sessionId) saveSessionConfig.mutate({ sessionId, patch: { model: value } })
-    else setLayout({ selectedModel: value })
+    if (sessionId)
+      saveSessionConfig.mutate({ sessionId, patch: { model: value, routing: 'manual' } })
+    else {
+      setDraftRouting(workspaceId, 'manual')
+      setLayout({ selectedModel: value })
+    }
   }
 
   const setSelectedEffort = (value: string) => {
@@ -383,16 +428,26 @@ export const ModelPicker = memo(function ModelPicker({
     catalogModels[0]
   if (!model) return null
   const chooseModel = (value: string) => {
+    if (value === '__auto__') {
+      if (autoDisabled) return
+      if (sessionId) saveSessionConfig.mutate({ sessionId, patch: { routing: 'auto' } })
+      else setDraftRouting(workspaceId, 'auto')
+      return
+    }
     const next = catalogModels.find(row => row.selectionId === value)
     if (!next || next.disabledReason) return
     if (sessionId && boundAgent && sameSessionAgent(boundAgent, next.agent)) {
       setSelectedModel(next.value)
     } else if (sessionId) {
+      setDraftRouting(workspaceId, 'manual')
       setDraftSelection(workspaceId, value)
       selectSession(null)
     } else {
       if (workspaceOnly) setLayout({ selectedModel: next.value })
-      else setDraftSelection(workspaceId, value)
+      else {
+        setDraftRouting(workspaceId, 'manual')
+        setDraftSelection(workspaceId, value)
+      }
     }
   }
   const effortLevels = model.supportsEffort ? (model.supportedEffortLevels ?? []) : []
@@ -403,9 +458,12 @@ export const ModelPicker = memo(function ModelPicker({
   return (
     <div className="flex min-w-0 items-center gap-1">
       <ModelDropdown
-        current={model.selectionId}
+        current={auto ? '__auto__' : model.selectionId}
         model={model}
         models={catalogModels}
+        auto={auto}
+        autoDisabled={autoDisabled}
+        autoLabel={sessionConfig?.model ? `Auto · ${model.displayName}` : 'Auto'}
         onOpen={() => {
           if (!workspaceOnly) void catalogQuery.refetch()
         }}
