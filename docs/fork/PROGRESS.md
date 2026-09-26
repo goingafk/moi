@@ -236,19 +236,35 @@ This log records the durable outcome of each phase in `PLAN.md`. Update the matc
 
 ### Summary
 
-Not started.
+- Created the separate `memory-service` repo (`~/Documents/memory-service`, local git, not yet pushed). It stores memories in SQLite (WAL) with FTS5 and optional Ollama embeddings, and has a stateless JSON-only MCP endpoint (`remember`, `recall`, `pin`, `forget`) plus a REST API for moi. Access uses the same Tailscale device-IP allow-list model as moi's direct mode. Jev (TypeSafe HTTP API) and Laya (OpenAI-compatible, strictly parsed) sit behind one scorer interface with a fallback chain. The TypeSafe key lives in the OS keychain, with a loud `0600` file fallback on headless Linux.
+- Scoring follows published systems rather than invented weights (`memory-design.md`). Retrieval uses Reciprocal Rank Fusion, decay uses ACT-R activation, and importance is kept separate from relevance. Duplicates and contradictions are judged per candidate pair; a contradicted entry is superseded and kept in history. Eviction is an archive with hysteresis, and a scorer failure never evicts an entry or loses a write. Every decision is logged for tuning.
+- moi now adds a capped memory digest to every chat send's `<moi-context>` directives, with an 800 ms timeout that never blocks the send. It also has `moi memory add` over the control port with provenance from the chat binding, a `memory.url` app setting, and authenticated `/api/memory/*` proxy routes. A new Settings → Memory page covers the service address, on/off, scorer, threshold, and entry search/add/edit/pin/restore/delete. The Usage panel shows a _Jev · memory_ spend row from the service's token totals.
+- Rewrote `remote-setup.md` section 2 so updates use one `BRANCH` variable (now `fork/phase-6-memory`) and one switch command that works whether or not the branch exists locally.
 
 ### Verification
 
-Not run.
+- memory-service: `bun test` 123 passed, 0 failed. Coverage includes RRF (with ties), ACT-R activation values, every eviction clause, scorer request shapes/retries/strict Laya parsing/fallback, the write path (duplicate, contradiction, low confidence, scorer failure, embeddings paraphrase), the digest (visibility, pinned first, never calling a scorer, the rolling context log), recall revival, auth for every route, the MCP lifecycle, the REST API, and a real process that refuses a `0.0.0.0` bind. Typecheck, oxlint and oxfmt are clean.
+- moi: `bun test` 1,846 passed, 5 skipped, 0 failed (was 1,814). The 32 new tests cover directive rendering and escaping, digest injection/skip on error/403/timeout/disabled/no URL, project resolution from a real git remote, the proxy routes, CLI provenance, and Jev usage pricing. `bun run typecheck` passed. `bun run lint` exited 0 with the same 9 pre-existing warnings. `bun run format:check` and `bun run build:client` passed.
+- Live, on this MacBook with isolated data: Claude Code 2.1.282 saved a fact through the real MCP client, and Codex 0.153.4 recalled that same fact and saved its own (cross-agent). In a production moi build, `moi memory add` stored a project fact (an SSH remote normalised to `github.com/goingafk/memory-e2e`) and a global fact. A real Claude chat in that workspace then answered from the injected digest ("deploys with `make ship` … British spelling"). Temporary servers and data were removed afterwards.
+- Verified against primary docs: TypeSafe System One API (request, response and error shapes), Ollama `/api/embed`, MCP Streamable HTTP (2025-11-25), `claude mcp add --transport http`, `codex mcp add --url`, and Codex's `default_tools_approval_mode`. Details are in the service's `NOTES.md`.
 
 ### Decisions
 
-None yet.
+- Owner-approved: separate repo on the LXC; hybrid FTS5 + embeddings; a rolling recent-work log as the eviction context; Laya built against fakes; device-IP auth; research-based scoring (RRF, ACT-R, importance separate from relevance, archive not delete).
+- Hand-rolled the four-method MCP endpoint rather than adding `@modelcontextprotocol/sdk` and its dependency tree. The spec permits stateless JSON responses, and both real clients worked.
+- Call TypeSafe's documented HTTP API with `fetch` instead of `@typesafe-ai/sdk`. Relevance and importance use `score` because `noul` has no confidence.
+- MCP `forget` archives; only the inspector deletes. When disabled, the service stops digests and sweeps but keeps explicit saves.
+- The service refuses text that looks like a credential, because memories reach every agent's context and the scorer.
 
 ### Open items
 
-All Phase 6 tasks in `PLAN.md`.
+- **Owner deployment:** push both repos (the memory-service GitHub repo does not exist yet), deploy the service on the LXC, set the TypeSafe key, and put the LXC's own IP in its `allowedIps`. Then set the address in Settings → Memory. The plan's done condition, a Codex fact appearing in a Claude chat _from another machine_, needs this deployment. The same-machine version was verified.
+- **Jev scoring is unverified live:** no TypeSafe key was used during development. After deploying, add a few facts, send some messages, run `POST /v1/sweep`, and check `decisions.jsonl` for `scored` events and the _Jev · memory_ usage row.
+- **No embedding model** on the Ollama server (`gemma4:26b` and `qwen3.8:27b` only). Pull one (e.g. `nomic-embed-text`) to enable paraphrase matching; until then search is keyword-only.
+- **Eviction over time** is covered by tests with a controlled clock, not observed live. The thresholds are defaults to tune from `decisions.jsonl`.
+- **The Settings → Memory page was not exercised in a browser:** no browser automation was available in this session. It typechecks and builds, and its proxy routes are tested. Check it by hand on first deployment.
+- Cline's `streamableHttp` config is taken from Cline's documentation. Cline was not installed, so it is untested.
+- The digest adds up to 800 ms before a send when the service is slow. Watch for `[memory] digest skipped` in the server log.
 
 ## Phase 7 — Router and Auto routed mode
 

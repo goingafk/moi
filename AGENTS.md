@@ -14,6 +14,7 @@ Every phase must end by updating `docs/fork/PROGRESS.md` with its summary, verif
 
 - Agents are Claude Code, Codex, and local models on Ollama (via Claude Code pointed at Ollama); Jev (TypeSafe API, called directly) or Laya routes in Auto mode. No Hermes or OpenRouter work.
 - Remote access is Tailscale-only; never bind a public interface. Every HTTP route and WebSocket goes through `server/auth.ts`: Serve identity allow-list on loopback, direct Tailscale-IP device allow-list bound only to that IP, or `auth: off` for direct local requests (`bun run dev` defaults to off). Setup: `docs/fork/remote-setup.md`.
+- Shared memory (Phase 6) is a separate `memory-service` repo on the tailnet; moi injects its digest into chat context and exposes `moi memory add` and Settings → Memory. See `docs/fork/memory.md`.
 - npm self-update is off by default (`selfUpdate` in `config.json` / `MOI_SELF_UPDATE`) — the published `moi-computer` package is upstream and would replace the fork.
 
 ## Agent context layout
